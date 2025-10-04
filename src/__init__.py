@@ -1,0 +1,1 @@
+# SharePoint to Azure AI Search Sync - Source Package
