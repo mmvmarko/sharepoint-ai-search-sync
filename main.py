@@ -22,6 +22,7 @@ sys.path.extend([
 
 from sharepoint_sync import SharePointSync, SharePointSyncError
 from azure_search_setup import AzureSearchSetup, SearchSetupError
+from azure_search_integrated_vectorization import AzureSearchIntegratedVectorization
 from settings import config
 
 # Set up logging
@@ -343,6 +344,81 @@ def config_info():
     print(f"\\nConfiguration file: {os.path.join(os.getcwd(), '.env')}")
     if not os.path.exists('.env'):
         print("⚠ .env file not found. Copy .env.template to .env and configure it.")
+
+@cli.command()
+def setup_integrated_vectorization():
+    """Set up Azure AI Search with integrated vectorization for Copilot Studio"""
+    logger.info("Setting up Azure AI Search with integrated vectorization...")
+    
+    try:
+        search_setup = AzureSearchIntegratedVectorization()
+        
+        # Set up the complete pipeline
+        result = search_setup.setup_integrated_vectorization_pipeline()
+        
+        if result.get("status") == "success":
+            print("\\n🎉 Integrated vectorization pipeline setup completed!")
+            print("\\n📋 Resources created:")
+            print("   • Data source: ds-spofiles-integrated")
+            print("   • Index: idx-spofiles-integrated (with integrated vectorization)")
+            print("   • Indexer: ix-spofiles-integrated")
+            
+            print("\\n✅ This index is now compatible with Copilot Studio!")
+            print("\\n📖 Next steps:")
+            print("1. Monitor indexer progress: python main.py check-integrated-status")
+            print("2. Use 'idx-spofiles-integrated' as your knowledge source in Copilot Studio")
+            print("3. Test your chatbot with the indexed content")
+        else:
+            print("\\n⚠ Setup completed with warnings. Check logs for details.")
+        
+    except SearchSetupError as e:
+        logger.error(f"Setup failed: {e}")
+        print(f"\\n❌ Setup failed: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error during setup: {e}")
+        print(f"\\n❌ Unexpected error: {e}")
+        sys.exit(1)
+
+@cli.command()
+def check_integrated_status():
+    """Check status of integrated vectorization indexer"""
+    logger.info("Checking integrated vectorization indexer status...")
+    
+    try:
+        search_setup = AzureSearchIntegratedVectorization()
+        status = search_setup.check_pipeline_status()
+        
+        print("\\n📊 Integrated Vectorization Indexer Status:")
+        print(f"Status: {status.get('status', 'unknown')}")
+        
+        if "lastResult" in status:
+            last_result = status["lastResult"]
+            print(f"Last execution: {last_result.get('status', 'unknown')}")
+            print(f"Items processed: {last_result.get('itemsProcessed', 0)}")
+            print(f"Items failed: {last_result.get('itemsFailed', 0)}")
+            
+            if last_result.get("errors"):
+                print("\\n⚠ Errors found:")
+                for error in last_result["errors"][:5]:
+                    print(f"  • {error.get('errorMessage', 'Unknown error')}")
+            
+            if last_result.get('status') == 'success':
+                print("\\n✅ Indexer completed successfully!")
+                print("Your index is ready for use with Copilot Studio.")
+            elif last_result.get('status') == 'inProgress':
+                print("\\n⏳ Indexer is still running...")
+            else:
+                print("\\n❌ Indexer encountered issues. Check the errors above.")
+        
+    except SearchSetupError as e:
+        logger.error(f"Status check failed: {e}")
+        print(f"\\n❌ Status check failed: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        print(f"\\n❌ Unexpected error: {e}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     cli()
