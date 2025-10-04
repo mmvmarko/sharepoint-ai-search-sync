@@ -2,12 +2,15 @@
 
 A Python application that syncs SharePoint Online documents to Azure Blob Storage and configures Azure AI Search for powerful document search and retrieval, specifically designed to work with Microsoft Copilot Studio.
 
+> For a full operational walkthrough (workflows, command glossary, troubleshooting), see **[guide.md](./guide.md)**.
+
 ## Features
 
 - **Service Principal Authentication**: Secure authentication using Azure Identity instead of SAS tokens
 - **Incremental Sync**: Uses SharePoint delta API to efficiently track and sync only changed files
 - **Azure Blob Storage**: Stores documents with rich metadata including original SharePoint URLs
 - **Azure AI Search with Vector Embeddings**: Full-text search with semantic vector search for enhanced relevance
+- **Integrated Vectorization Mode**: Optional simplified pipeline using Azure AI Search vectorizers + embedding skill for Copilot Studio compatibility
 - **Copilot Studio Ready**: Preserves SharePoint URLs for proper citation links
 - **User Authentication**: Uses delegated authentication (device code flow) for secure access
 - **Robust Error Handling**: Comprehensive logging and error recovery
@@ -65,6 +68,29 @@ python main.py sync
 # 3. Run indexer to process documents
 python main.py run-indexer
 ```
+
+### Modern Integrated Vectorization Path (Recommended)
+
+If you want a Copilot Studio–ready vector index using integrated vectorization:
+
+```bash
+# 1. Sync SharePoint content to Blob (initial or incremental)
+python main.py sync
+
+# 2. Create/update stable vertical (ds/ss/idx/ix all with prefix 'spo') and start indexer
+python main.py create_vertical --prefix spo
+
+# 3. Monitor indexer status
+python main.py check-integrated-status
+
+# (Optional) Run a disposable test vertical
+python main.py test_integrated --prefix demo
+
+# (Cleanup) Delete a vertical
+python main.py delete_vertical --prefix demo
+```
+
+Then add `idx-spo` as a knowledge source in Copilot Studio.
 
 ## Detailed Setup
 
@@ -169,6 +195,8 @@ python main.py setup-search           # Set up search pipeline with vector embed
 python main.py run-indexer            # Process documents in search
 python main.py indexer-status         # Check indexer progress
 python main.py list-resources         # List search resources
+python main.py setup-integrated-vectorization  # Create integrated vectorization (Copilot Studio ready) index
+python main.py check-integrated-status         # Check integrated pipeline indexer status
 ```
 
 ### Sync Process Details
@@ -185,6 +213,49 @@ python main.py list-resources         # List search resources
 2. **Skillset**: Extracts entities and generates vector embeddings using Azure OpenAI
 3. **Index**: Defines searchable fields including `source_url` for citations and `contentVector` for semantic search
 4. **Indexer**: Processes documents on a schedule (every 30 minutes)
+
+### Integrated Vectorization (Copilot Studio Compatible)
+
+The project also supports an "integrated vectorization" pipeline that aligns with the latest Azure AI Search guidance and is required for Microsoft Copilot Studio knowledge sources.
+
+Command to create resources:
+
+```bash
+python main.py setup-integrated-vectorization
+```
+
+What it creates:
+
+- Data Source: `ds-spofiles-integrated`
+- Index: `idx-spofiles-integrated` (contains `content_vector` field, vectorizer attached)
+- Skillset: `ss-spofiles-integrated` (split + embedding skill)
+- Indexer: `ix-spofiles-integrated`
+
+Then monitor:
+
+```bash
+python main.py check-integrated-status
+```
+
+Verification steps:
+
+1. Check index statistics to confirm vectors stored (vector index size > 0)
+2. Retrieve a document (optional) selecting only `content_vector` to ensure it's populated
+3. Perform a vector text query:
+
+Example REST query (PowerShell):
+
+```powershell
+$body = '{
+   "vectorQueries": [
+      { "kind": "text", "text": "company policies about vacation", "fields": "content_vector", "k": 5 }
+   ],
+   "select": "title,source_url"
+}'
+Invoke-RestMethod -Method Post -Uri "https://<YOUR_SEARCH>.search.windows.net/indexes/idx-spofiles-integrated/docs/search?api-version=2024-07-01" -Headers @{"api-key"="<ADMIN_KEY>";"Content-Type"="application/json"} -Body $body
+```
+
+If results return with meaningful titles and source URLs, integrated vectorization works.
 
 ## Copilot Studio Integration
 
@@ -214,6 +285,7 @@ python main.py indexer-status
 
 # View search service resources
 python main.py list-resources
+python main.py check-integrated-status   # Integrated vectorization indexer
 ```
 
 ### Common Issues
@@ -224,6 +296,11 @@ python main.py list-resources
    - Ensure storage account allows the authentication method
 4. **Search Setup Failed**: Verify search service admin key and endpoint
 5. **No Citations in Copilot**: Ensure `source_url` field mapping in Copilot Studio
+6. **Empty Vector Field**:
+   - Ensure you used `setup-integrated-vectorization` (adds skillset + outputFieldMappings)
+   - Confirm skillset exists: check Azure Portal > Search Service > Skillsets
+   - Check index stats: vector index size must be > 0
+   - Verify embedding model deployment name matches `AZURE_OPENAI_EMBEDDING_MODEL`
 
 ### Debug Mode
 

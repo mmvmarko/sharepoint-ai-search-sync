@@ -42,7 +42,6 @@ def cli(debug):
     """SharePoint to Azure AI Search Sync Tool"""
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
-
 @cli.command()
 @click.option('--check-config', is_flag=True, help='Only check configuration without running sync')
 def sync(check_config):
@@ -357,67 +356,90 @@ def setup_integrated_vectorization():
         result = search_setup.setup_integrated_vectorization_pipeline()
         
         if result.get("status") == "success":
-            print("\\n🎉 Integrated vectorization pipeline setup completed!")
-            print("\\n📋 Resources created:")
+            print("\n🎉 Integrated vectorization pipeline setup completed!")
+            print("\n📋 Resources created:")
             print("   • Data source: ds-spofiles-integrated")
             print("   • Index: idx-spofiles-integrated (with integrated vectorization)")
             print("   • Indexer: ix-spofiles-integrated")
-            
-            print("\\n✅ This index is now compatible with Copilot Studio!")
-            print("\\n📖 Next steps:")
-            print("1. Monitor indexer progress: python main.py check-integrated-status")
-            print("2. Use 'idx-spofiles-integrated' as your knowledge source in Copilot Studio")
-            print("3. Test your chatbot with the indexed content")
+            print("\n➡ Monitor progress: python main.py check-integrated-status")
         else:
-            print("\\n⚠ Setup completed with warnings. Check logs for details.")
-        
+            print("\n⚠ Setup returned unexpected status. Check logs.")
     except SearchSetupError as e:
-        logger.error(f"Setup failed: {e}")
-        print(f"\\n❌ Setup failed: {e}")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Unexpected error during setup: {e}")
-        print(f"\\n❌ Unexpected error: {e}")
-        sys.exit(1)
-
-@cli.command()
-def check_integrated_status():
-    """Check status of integrated vectorization indexer"""
-    logger.info("Checking integrated vectorization indexer status...")
-    
-    try:
-        search_setup = AzureSearchIntegratedVectorization()
-        status = search_setup.check_pipeline_status()
-        
-        print("\\n📊 Integrated Vectorization Indexer Status:")
-        print(f"Status: {status.get('status', 'unknown')}")
-        
-        if "lastResult" in status:
-            last_result = status["lastResult"]
-            print(f"Last execution: {last_result.get('status', 'unknown')}")
-            print(f"Items processed: {last_result.get('itemsProcessed', 0)}")
-            print(f"Items failed: {last_result.get('itemsFailed', 0)}")
-            
-            if last_result.get("errors"):
-                print("\\n⚠ Errors found:")
-                for error in last_result["errors"][:5]:
-                    print(f"  • {error.get('errorMessage', 'Unknown error')}")
-            
-            if last_result.get('status') == 'success':
-                print("\\n✅ Indexer completed successfully!")
-                print("Your index is ready for use with Copilot Studio.")
-            elif last_result.get('status') == 'inProgress':
-                print("\\n⏳ Indexer is still running...")
-            else:
-                print("\\n❌ Indexer encountered issues. Check the errors above.")
-        
-    except SearchSetupError as e:
-        logger.error(f"Status check failed: {e}")
-        print(f"\\n❌ Status check failed: {e}")
+        logger.error(f"Failed to check status: {e}")
+        print(f"\n❌ Failed to check status: {e}")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
-        print(f"\\n❌ Unexpected error: {e}")
+        print(f"\n❌ Unexpected error: {e}")
+        sys.exit(1)
+
+@cli.command(name='test_integrated')  # Preserve underscore form so user can run `test_integrated`
+@click.option('--prefix', default='test', help='Prefix for disposable test resources')
+def test_integrated(prefix):
+    """Create a disposable integrated vectorization pipeline (data source, index, skillset, indexer) for testing."""
+    logger.info("Creating disposable integrated vectorization resources for test...")
+    try:
+        search_setup = AzureSearchIntegratedVectorization()
+        result = search_setup.quick_test_setup(prefix=prefix)
+        print("\n=== Quick Integrated Vectorization Test Resources ===")
+        print(f"Data Source: {result['dataSource']}")
+        print(f"Index     : {result['index']}")
+        print(f"Skillset  : {result['skillset']}")
+        print(f"Indexer   : {result['indexer']} (started)")
+        print("\nNext steps:")
+        print(f"1. Monitor: python main.py check-integrated-status")
+        print(f"2. After processing, verify vectors via REST vectorQueries on index {result['index']}")
+        print("3. Delete test resources manually when done to save capacity.")
+    except SearchSetupError as e:
+        logger.error(f"Test setup failed: {e}")
+        sys.exit(1)
+
+@cli.command(name='create_vertical')
+@click.option('--prefix', default='spo', help='Prefix for vertical resource set (stable names)')
+def create_vertical(prefix):
+    """Create or update a stable integrated vectorization vertical (ds/ss/idx/ix) and start indexing."""
+    logger.info(f"Creating vertical with prefix '{prefix}'")
+    try:
+        search_setup = AzureSearchIntegratedVectorization()
+        result = search_setup.create_vertical(prefix)
+        print("\n=== Vertical Resources (Stable) ===")
+        print(f"Data Source: {result['dataSource']}")
+        print(f"Skillset   : {result['skillset']}")
+        print(f"Index      : {result['index']}")
+        print(f"Indexer    : {result['indexer']} (started)")
+        print("\nNext steps:")
+        print(f"1. Monitor: python main.py check-integrated-status")
+        print(f"2. Run a vector query against index {result['index']} when status shows success")
+        print("3. Use this index as knowledge source in Copilot Studio if desired")
+    except SearchSetupError as e:
+        logger.error(f"Vertical creation failed: {e}")
+        sys.exit(1)
+
+@cli.command(name='delete_vertical')
+@click.option('--prefix', default='spo', help='Prefix of vertical (stable names) to delete')
+def delete_vertical(prefix):
+    """Delete all search resources (data source, skillset, index, indexer) for a given prefix."""
+    logger.info(f"Deleting vertical with prefix '{prefix}'")
+    try:
+        search_setup = AzureSearchIntegratedVectorization()
+        report = search_setup.delete_vertical(prefix)
+        print("\n=== Deletion Report ===")
+        for kind, info in report['resources'].items():
+            status = info['status']
+            name = info['name']
+            print(f"{kind:10s} {name:40s} -> {status}")
+        print("\nCompleted deletion attempt.")
+    except SearchSetupError as e:
+        logger.error(f"Deletion failed: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
         sys.exit(1)
 
 if __name__ == '__main__':

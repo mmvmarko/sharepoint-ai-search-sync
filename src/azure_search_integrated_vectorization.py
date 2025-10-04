@@ -100,6 +100,64 @@ class AzureSearchIntegratedVectorization:
         logger.info(f"Successfully created data source: {name}")
         return result
 
+    # ------------------------ SKILLSET (MISSING IN ORIGINAL) ------------------------
+    def create_skillset(self, name: str = "ss-spofiles-integrated") -> Dict[str, Any]:
+        """Create skillset that performs minimal chunking + embedding generation.
+
+        Notes:
+        - Integrated vectorization STILL requires an embedding skill at indexing time; just adding a vector field + vectorizer does NOT populate vectors.
+        - We chunk (page-based) to avoid token overflows; for now we embed ONLY the first chunk to keep design simple. This can be extended to per-chunk projections later.
+        - Output targetName must match the index field (content_vector).
+        """
+        logger.info(f"Creating skillset: {name}")
+
+        skills: List[Dict[str, Any]] = [
+            {
+                "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+                "name": "split-text",
+                "description": "Split document into logical pages/chunks",
+                "context": "/document",
+                "textSplitMode": "pages",
+                "maximumPageLength": 2000,
+                "pageOverlapLength": 100,
+                "inputs": [
+                    {"name": "text", "source": "/document/content"}
+                ],
+                "outputs": [
+                    {"name": "textItems", "targetName": "pages"}
+                ]
+            },
+            {
+                "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+                "name": "document-embedding",
+                "description": "Generate embedding for first chunk (simplified)",
+                "context": "/document",
+                "resourceUri": self.config.azure_openai_endpoint,
+                "apiKey": self.config.azure_openai_api_key,
+                "deploymentId": self.config.azure_openai_embedding_model,
+                # modelName required in 2024-07-01
+                "modelName": self.config.azure_openai_embedding_model,
+                "inputs": [
+                    {"name": "text", "source": "/document/pages/0"}
+                ],
+                "outputs": [
+                    {"name": "embedding", "targetName": "content_vector"}
+                ]
+            }
+        ]
+
+        skillset_definition = {
+            "name": name,
+            "description": "Skillset for integrated vectorization (single embedding per doc)",
+            "skills": skills
+        }
+
+        result = self._make_request("PUT", f"skillsets/{name}", skillset_definition)
+        if "error" in result:
+            raise SearchSetupError(f"Failed to create skillset: {result}")
+        logger.info(f"Successfully created skillset: {name}")
+        return result
+
     def create_index_with_integrated_vectorization(self, name: str = "idx-spofiles-integrated") -> Dict[str, Any]:
         """Create search index with integrated vectorization for Copilot Studio compatibility."""
         logger.info(f"Creating index with integrated vectorization: {name}")
@@ -163,7 +221,8 @@ class AzureSearchIntegratedVectorization:
                 "name": "content_vector",
                 "type": "Collection(Edm.Single)",
                 "searchable": True,
-                "retrievable": True,  # FIXED: Made retrievable for proper integrated vectorization
+                # Not retrievable to save payload size (adjust to True if debugging vectors)
+                "retrievable": False,
                 "dimensions": 1536,  # text-embedding-3-small dimensions
                 "vectorSearchProfile": "default-vector-profile"
             }
@@ -217,16 +276,18 @@ class AzureSearchIntegratedVectorization:
         logger.info(f"Successfully created index with integrated vectorization: {name}")
         return result
 
-    def create_indexer_with_integrated_vectorization(self, name: str = "ix-spofiles-integrated", 
-                                                   data_source_name: str = "ds-spofiles-integrated",
-                                                   index_name: str = "idx-spofiles-integrated") -> Dict[str, Any]:
-        """Create indexer with integrated vectorization - no skillset needed."""
+    def create_indexer_with_integrated_vectorization(self, name: str = "ix-spofiles-integrated",
+                                                     data_source_name: str = "ds-spofiles-integrated",
+                                                     index_name: str = "idx-spofiles-integrated",
+                                                     skillset_name: str = "ss-spofiles-integrated") -> Dict[str, Any]:
+        """Create indexer wired to skillset producing embeddings -> vector field."""
         logger.info(f"Creating indexer with integrated vectorization: {name}")
-        
+
         indexer_definition = {
             "name": name,
             "dataSourceName": data_source_name,
             "targetIndexName": index_name,
+            "skillsetName": skillset_name,
             "parameters": {
                 "configuration": {
                     "dataToExtract": "contentAndMetadata",
@@ -238,46 +299,29 @@ class AzureSearchIntegratedVectorization:
                 }
             },
             "fieldMappings": [
-                {
+                {  # Create key from path (base64)
                     "sourceFieldName": "metadata_storage_path",
                     "targetFieldName": "id",
-                    "mappingFunction": {
-                        "name": "base64Encode"
-                    }
+                    "mappingFunction": {"name": "base64Encode"}
                 },
-                {
-                    "sourceFieldName": "metadata_storage_name",
-                    "targetFieldName": "title"
-                },
-                {
-                    "sourceFieldName": "content",
-                    "targetFieldName": "content"
-                },
-                {
-                    "sourceFieldName": "metadata_storage_path",
-                    "targetFieldName": "source_url"
-                },
-                {
-                    "sourceFieldName": "metadata_storage_last_modified",
-                    "targetFieldName": "lastModified"
-                },
-                {
-                    "sourceFieldName": "metadata_storage_size",
-                    "targetFieldName": "size"
-                },
-                {
-                    "sourceFieldName": "metadata_storage_file_extension",
-                    "targetFieldName": "file_extension"
+                {"sourceFieldName": "metadata_storage_name", "targetFieldName": "title"},
+                {"sourceFieldName": "content", "targetFieldName": "content"},
+                {"sourceFieldName": "metadata_storage_path", "targetFieldName": "source_url"},
+                {"sourceFieldName": "metadata_storage_last_modified", "targetFieldName": "lastModified"},
+                {"sourceFieldName": "metadata_storage_size", "targetFieldName": "size"},
+                {"sourceFieldName": "metadata_storage_file_extension", "targetFieldName": "file_extension"}
+            ],
+            "outputFieldMappings": [
+                {  # Map embedding skill output to vector field
+                    "sourceFieldName": "/document/content_vector",
+                    "targetFieldName": "content_vector"
                 }
             ]
         }
-        
-        # Use PUT to create or update the indexer
+
         result = self._make_request("PUT", f"indexers/{name}", indexer_definition)
-        
         if "error" in result:
             raise SearchSetupError(f"Failed to create indexer: {result}")
-        
         logger.info(f"Successfully created indexer with integrated vectorization: {name}")
         return result
 
@@ -316,6 +360,10 @@ class AzureSearchIntegratedVectorization:
             # Create index with integrated vectorization
             index_result = self.create_index_with_integrated_vectorization()
             logger.info("✓ Index with integrated vectorization created")
+
+            # Create skillset (previously missing -> causes empty vectors)
+            skillset_result = self.create_skillset()
+            logger.info("✓ Skillset created")
             
             # Create indexer
             indexer_result = self.create_indexer_with_integrated_vectorization()
@@ -332,6 +380,7 @@ class AzureSearchIntegratedVectorization:
                 "status": "success",
                 "data_source": ds_result,
                 "index": index_result,
+                "skillset": skillset_result,
                 "indexer": indexer_result,
                 "run": run_result
             }
@@ -369,3 +418,140 @@ class AzureSearchIntegratedVectorization:
         except SearchSetupError as e:
             logger.error(f"Failed to check pipeline status: {str(e)}")
             raise
+
+    # ------------------------ VERIFICATION UTILITIES ------------------------
+    def get_index_statistics(self, index_name: str = "idx-spofiles-integrated") -> Dict[str, Any]:
+        """Return index statistics including vector index size to confirm embeddings exist."""
+        logger.info(f"Fetching statistics for index: {index_name}")
+        stats = self._make_request("GET", f"indexes/{index_name}/stats")
+        if "error" in stats:
+            raise SearchSetupError(f"Failed to get index stats: {stats}")
+        return stats
+
+    def verify_vectors_present(self, index_name: str = "idx-spofiles-integrated") -> Dict[str, Any]:
+        """Quick verification: checks vector index size > 0 and document count."""
+        stats = self.get_index_statistics(index_name)
+        doc_count = stats.get("documentCount", 0)
+        vector_store = stats.get("vectorIndexSizeBytes", 0) or stats.get("storageSize", 0)
+        has_vectors = vector_store and vector_store > 0
+        logger.info(f"Documents: {doc_count}, VectorIndexSizeBytes: {vector_store}, HasVectors={has_vectors}")
+        return {
+            "documents": doc_count,
+            "vectorIndexSizeBytes": vector_store,
+            "hasVectors": bool(has_vectors)
+        }
+
+    # ------------------------ QUICK TEST SETUP ------------------------
+    def quick_test_setup(self, prefix: str = "test") -> Dict[str, Any]:
+        """Create disposable data source, index, skillset, and indexer with a timestamp suffix.
+
+        Allows rapid iteration without clobbering primary resources. Returns created names.
+        """
+        import datetime, random
+        suffix = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S") + f"{random.randint(100,999)}"
+        ds_name = f"ds-{prefix}-{suffix}"[:60]
+        idx_name = f"idx-{prefix}-{suffix}"[:60]
+        ss_name = f"ss-{prefix}-{suffix}"[:60]
+        ix_name = f"ix-{prefix}-{suffix}"[:60]
+
+        logger.info(f"Creating quick test resources: {ds_name}, {idx_name}, {ss_name}, {ix_name}")
+
+        ds = self.create_data_source(ds_name)
+        idx = self.create_index_with_integrated_vectorization(idx_name)
+        ss = self.create_skillset(ss_name)
+        ix = self.create_indexer_with_integrated_vectorization(ix_name, ds_name, idx_name, ss_name)
+        run = self.run_indexer(ix_name)
+
+        return {
+            "status": "started",
+            "dataSource": ds_name,
+            "index": idx_name,
+            "skillset": ss_name,
+            "indexer": ix_name,
+            "run": run
+        }
+
+    # ------------------------ STABLE PREFIX VERTICAL ------------------------
+    def create_vertical(self, prefix: str) -> Dict[str, Any]:
+        """Create (or update) a stable set of resources using a given prefix without random suffix.
+
+        Names:
+          Data Source: ds-{prefix}
+          Skillset   : ss-{prefix}
+          Index      : idx-{prefix}
+          Indexer    : ix-{prefix}
+        Existing resources are updated in-place.
+        """
+        # Normalize prefix to allowed characters (lowercase, hyphen, alnum)
+        safe = ''.join(c for c in prefix.lower() if c.isalnum() or c == '-')[:48]
+        if not safe:
+            raise SearchSetupError("Prefix resulted in empty safe name")
+
+        ds_name = f"ds-{safe}"
+        ss_name = f"ss-{safe}"
+        idx_name = f"idx-{safe}"
+        ix_name = f"ix-{safe}"
+
+        logger.info(f"Creating/Updating vertical resources for prefix '{safe}'")
+        ds = self.create_data_source(ds_name)
+        idx = self.create_index_with_integrated_vectorization(idx_name)
+        ss = self.create_skillset(ss_name)
+        ix = self.create_indexer_with_integrated_vectorization(ix_name, ds_name, idx_name, ss_name)
+        run = self.run_indexer(ix_name)
+
+        return {
+            "status": "started",
+            "dataSource": ds_name,
+            "index": idx_name,
+            "skillset": ss_name,
+            "indexer": ix_name,
+            "run": run
+        }
+
+    def delete_vertical(self, prefix: str) -> Dict[str, Any]:
+        """Delete data source, indexer, skillset, and index associated with prefix.
+
+        Deletion order matters: indexer -> skillset -> index -> data source.
+        Missing resources are ignored; returns a report of what was deleted/found.
+        """
+        safe = ''.join(c for c in prefix.lower() if c.isalnum() or c == '-')[:48]
+        if not safe:
+            raise SearchSetupError("Prefix resulted in empty safe name")
+
+        resources = {
+            "indexer": f"ix-{safe}",
+            "skillset": f"ss-{safe}",
+            "index": f"idx-{safe}",
+            "datasource": f"ds-{safe}"
+        }
+
+        report = {k: {"name": v, "deleted": False, "status": "skipped"} for k, v in resources.items()}
+
+        def _delete(kind: str, endpoint: str):
+            name = resources[kind]
+            logger.info(f"Deleting {kind}: {name}")
+            resp = self._make_request("DELETE", f"{endpoint}/{name}")
+            # DELETE returns 204 with empty body usually; treat missing as success
+            report[kind]["deleted"] = True
+            report[kind]["status"] = "deleted"
+            return resp
+
+        # Delete ignoring errors about not found
+        try:
+            _delete("indexer", "indexers")
+        except Exception as e:
+            report["indexer"]["status"] = f"error: {e}"  # continue
+        try:
+            _delete("skillset", "skillsets")
+        except Exception as e:
+            report["skillset"]["status"] = f"error: {e}"
+        try:
+            _delete("index", "indexes")
+        except Exception as e:
+            report["index"]["status"] = f"error: {e}"
+        try:
+            _delete("datasource", "datasources")
+        except Exception as e:
+            report["datasource"]["status"] = f"error: {e}"
+
+        return {"prefix": safe, "resources": report}
