@@ -154,7 +154,7 @@ def setup_search(check_config):
         sys.exit(1)
 
 @cli.command()
-@click.argument('name', default='ix-spofiles')
+@click.argument('name', default='ix-spofiles-v2')
 def run_indexer(name):
     """Run the Azure AI Search indexer to process documents"""
     logger.info(f"Running indexer: {name}")
@@ -179,7 +179,7 @@ def run_indexer(name):
         sys.exit(1)
 
 @cli.command()
-@click.argument('name', default='ix-spofiles')
+@click.argument('name', default='ix-spofiles-v2')
 def indexer_status(name):
     """Check Azure AI Search indexer status and execution history"""
     try:

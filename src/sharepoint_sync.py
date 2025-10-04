@@ -2,6 +2,7 @@ import os
 import json
 import time
 import logging
+import webbrowser
 from typing import Dict, Any, Iterator, Optional, Tuple
 import requests
 import msal
@@ -33,12 +34,20 @@ class SharePointSync:
         if not self.config.validate_storage_config():
             raise SharePointSyncError("Azure Storage configuration is incomplete. Check your .env file.")
         
-        # Initialize Azure Storage with Service Principal authentication
-        self.credential = DefaultAzureCredential()
-        self.blob_service_client = BlobServiceClient(
-            account_url=self.config.az_storage_url,
-            credential=self.credential
-        )
+        # Initialize Azure Storage with account key if available, otherwise use Service Principal
+        if self.config.az_storage_account_key:
+            logger.info("Using Azure Storage account key for authentication")
+            self.blob_service_client = BlobServiceClient(
+                account_url=self.config.az_storage_url,
+                credential=self.config.az_storage_account_key
+            )
+        else:
+            logger.info("Using Service Principal for Azure Storage authentication")
+            self.credential = DefaultAzureCredential()
+            self.blob_service_client = BlobServiceClient(
+                account_url=self.config.az_storage_url,
+                credential=self.credential
+            )
         
         # Test storage access during initialization
         self._test_storage_access()
@@ -63,7 +72,8 @@ class SharePointSync:
     
     def get_token(self) -> str:
         """
-        Get an access token using device code flow.
+        Get an access token using client credentials flow if client secret is available,
+        otherwise fall back to device code flow.
         Caches the token until it expires.
         """
         current_time = time.time()
@@ -71,6 +81,31 @@ class SharePointSync:
             return self.token
             
         logger.info("Getting new access token...")
+        
+        # Try client credentials flow first if client secret is available
+        if self.config.client_secret and self.config.client_secret != "your_client_secret_here":
+            logger.info("Using client credentials flow (Service Principal)")
+            app = msal.ConfidentialClientApplication(
+                self.config.client_id,
+                client_credential=self.config.client_secret,
+                authority=self.config.authority
+            )
+            
+            # Use client credentials flow for service principal authentication
+            result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+            
+            if "access_token" in result:
+                self.token = result["access_token"]
+                # Tokens typically expire in 1 hour, cache for 50 minutes to be safe
+                self.token_expires_at = current_time + (result.get("expires_in", 3600) - 600)
+                logger.info("✅ Successfully obtained access token via client credentials")
+                return self.token
+            else:
+                logger.error(f"❌ Client credentials authentication failed: {result.get('error_description', 'Unknown error')}")
+                raise SharePointSyncError(f"Client credentials authentication failed: {result.get('error_description', 'Unknown error')}")
+        
+        # Fallback to device code flow for interactive authentication
+        logger.info("Using device code flow (Interactive authentication)")
         app = msal.PublicClientApplication(
             self.config.client_id, 
             authority=self.config.authority
@@ -82,7 +117,18 @@ class SharePointSync:
             raise SharePointSyncError(f"Failed to create device flow: {flow.get('error_description')}")
         
         print(f"\\n{flow['message']}\\n")
+        
+        # Automatically open browser for user convenience
+        if 'verification_uri' in flow:
+            print(f"Opening browser to: {flow['verification_uri']}")
+            try:
+                webbrowser.open(flow['verification_uri'])
+            except Exception as e:
+                logger.warning(f"Could not auto-open browser: {e}")
+        
+        print(f"User Code: {flow.get('user_code', 'N/A')}")
         print("Please complete the authentication in your browser...")
+        print("Waiting for authentication to complete...")
         
         result = app.acquire_token_by_device_flow(flow)
         if "access_token" not in result:
@@ -134,7 +180,18 @@ class SharePointSync:
             headers = {"Authorization": f"Bearer {token}"}
             response = requests.get(url, headers=headers)
         
-        response.raise_for_status()
+        if not response.ok:
+            error_detail = "Unknown error"
+            try:
+                error_json = response.json()
+                error_detail = error_json.get("error", {}).get("message", f"HTTP {response.status_code}")
+            except:
+                error_detail = f"HTTP {response.status_code}: {response.text[:200]}"
+            
+            logger.error(f"❌ Graph API request failed: {error_detail}")
+            logger.error(f"Request URL: {url}")
+            raise SharePointSyncError(f"Graph API request failed: {error_detail}")
+        
         return response.json()
     
     @retry(
@@ -299,10 +356,23 @@ class SharePointSync:
         # Build initial delta URL
         delta_url = state.get("delta_url")
         if not delta_url:
-            delta_url = (
-                f"https://graph.microsoft.com/v1.0/sites/{self.config.site_id}/"
-                f"drives/{self.config.drive_id}/root:/{self.config.folder_path}:/delta"
-            )
+            # For delegated permissions, try a simpler approach with drive items
+            site_id = self.config.site_id
+            
+            # If folder path exists, try to target that specific folder
+            if self.config.folder_path and self.config.folder_path.strip():
+                # Use drive items with path for delegated permissions
+                folder_path = self.config.folder_path.strip()
+                delta_url = (
+                    f"https://graph.microsoft.com/v1.0/sites/{site_id}/"
+                    f"drive/root:/{folder_path}:/delta"
+                )
+            else:
+                # Access entire drive root with delegated permissions
+                delta_url = (
+                    f"https://graph.microsoft.com/v1.0/sites/{site_id}/"
+                    f"drive/root/delta"
+                )
             logger.info("Starting full sync (no previous delta state)")
         else:
             logger.info("Continuing incremental sync from previous state")

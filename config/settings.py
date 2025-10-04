@@ -1,6 +1,10 @@
 import os
 from typing import Optional
-from pydantic import BaseSettings
+import os
+import logging
+from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,6 +15,7 @@ class Config(BaseSettings):
     # Azure AD Configuration
     tenant_id: str = os.getenv("TENANT_ID", "")
     client_id: str = os.getenv("CLIENT_ID", "")
+    client_secret: str = os.getenv("CLIENT_SECRET", "")
     
     # SharePoint Configuration
     site_id: str = os.getenv("SITE_ID", "")
@@ -20,6 +25,7 @@ class Config(BaseSettings):
     # Azure Storage Configuration (Service Principal)
     az_storage_url: str = os.getenv("AZ_STORAGE_URL", "")
     az_container: str = os.getenv("AZ_CONTAINER", "spofiles")
+    az_storage_account_key: str = os.getenv("AZ_STORAGE_ACCOUNT_KEY", "")
     
     # Azure AI Search Configuration
     search_service_name: str = os.getenv("SEARCH_SERVICE_NAME", "")
@@ -33,7 +39,7 @@ class Config(BaseSettings):
     
     # Application Settings
     delta_state_file: str = "delta_state.json"
-    scopes: list = ["Files.Read.All", "Sites.Read.All", "offline_access"]
+    scopes: list = ["https://graph.microsoft.com/Files.Read.All", "https://graph.microsoft.com/Sites.Read.All"]
     
     @property
     def authority(self) -> str:
@@ -71,6 +77,21 @@ class Config(BaseSettings):
         
         return True
     
+    def validate_storage_for_search(self) -> bool:
+        """Validate storage configuration for Azure AI Search data source."""
+        if not self.validate_storage_config():
+            return False
+        
+        # For Azure AI Search, we need either account key or proper managed identity setup
+        has_account_key = self.az_storage_account_key and self.az_storage_account_key != "your_storage_account_key_here"
+        if not has_account_key:
+            # If no account key, warn about managed identity requirements
+            logger.warning("No storage account key provided. Azure AI Search data source will require:")
+            logger.warning("1. Search service must have system-assigned managed identity enabled")
+            logger.warning("2. Managed identity must have 'Storage Blob Data Reader' role on storage account")
+        
+        return True
+    
     def validate_search_config(self) -> bool:
         """Validate that required Azure AI Search configuration is present."""
         required_fields = [self.search_service_name, self.search_api_key, self.search_endpoint]
@@ -83,6 +104,7 @@ class Config(BaseSettings):
     
     class Config:
         env_file = ".env"
+        case_sensitive = False
 
 # Global configuration instance
 config = Config()

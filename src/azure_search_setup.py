@@ -67,22 +67,33 @@ class AzureSearchSetup:
             raise SearchSetupError(f"API request failed: {e}")
     
     def create_data_source(self, name: str = "ds-spofiles") -> Dict[str, Any]:
-        """Create Azure Blob data source for the search service."""
+        """Create or update Azure Blob data source for the search service."""
         logger.info(f"Creating data source: {name}")
+        
+        # For Azure AI Search data sources - use account key if available, otherwise managed identity
+        if self.config.az_storage_account_key and self.config.az_storage_account_key != "your_storage_account_key_here":
+            connection_string = f"DefaultEndpointsProtocol=https;AccountName={self.config.storage_account_name};AccountKey={self.config.az_storage_account_key};EndpointSuffix=core.windows.net"
+            description = "SharePoint files synced to Azure Blob Storage (Account Key)"
+        else:
+            # Try managed identity approach - requires Search service to have system-assigned identity
+            # with Storage Blob Data Reader role on the storage account
+            connection_string = f"DefaultEndpointsProtocol=https;AccountName={self.config.storage_account_name};EndpointSuffix=core.windows.net"
+            description = "SharePoint files synced to Azure Blob Storage (Managed Identity - requires setup)"
         
         data_source_definition = {
             "name": name,
             "type": "azureblob",
             "credentials": {
-                "connectionString": f"ResourceId=/subscriptions/{{subscription-id}}/resourceGroups/{{resource-group}}/providers/Microsoft.Storage/storageAccounts/{self.config.storage_account_name};"
+                "connectionString": connection_string
             },
             "container": {
                 "name": self.config.az_container
             },
-            "description": "SharePoint files synced to Azure Blob Storage (Service Principal auth)"
+            "description": description
         }
         
-        result = self._make_request("POST", "datasources", data_source_definition)
+        # Use PUT to create or update the data source
+        result = self._make_request("PUT", f"datasources/{name}", data_source_definition)
         
         if "error" in result:
             if result.get("status_code") == 404:
@@ -98,7 +109,7 @@ class AzureSearchSetup:
         
         skills = [
             {
-                "@odata.type": "#Microsoft.Skills.Text.EntityRecognitionSkill",
+                "@odata.type": "#Microsoft.Skills.Text.V3.EntityRecognitionSkill",
                 "name": "entities",
                 "description": "Extract entities from content",
                 "context": "/document",
@@ -107,19 +118,37 @@ class AzureSearchSetup:
                     {"name": "text", "source": "/document/content"}
                 ],
                 "outputs": [
-                    {"name": "entities", "targetName": "entities"}
+                    {"name": "persons", "targetName": "persons"},
+                    {"name": "organizations", "targetName": "organizations"},
+                    {"name": "locations", "targetName": "locations"}
+                ]
+            },
+            {
+                "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+                "name": "split_text",
+                "description": "Split large documents into chunks for embedding",
+                "context": "/document",
+                "textSplitMode": "pages",
+                "maximumPageLength": 2000,  # Much smaller to stay under token limit
+                "pageOverlapLength": 100,   # Smaller overlap
+                "inputs": [
+                    {"name": "text", "source": "/document/content"}
+                ],
+                "outputs": [
+                    {"name": "textItems", "targetName": "textChunks"}
                 ]
             },
             {
                 "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
                 "name": "embeddings",
-                "description": "Generate embeddings for content",
-                "context": "/document",
+                "description": "Generate embeddings for first content chunk",
+                "context": "/document",  # Back to document level
                 "resourceUri": self.config.azure_openai_endpoint,
                 "apiKey": self.config.azure_openai_api_key,
                 "deploymentId": self.config.azure_openai_embedding_model,
+                "modelName": self.config.azure_openai_embedding_model,  # Required in API version 2024-07-01
                 "inputs": [
-                    {"name": "text", "source": "/document/content"}
+                    {"name": "text", "source": "/document/textChunks/0"}  # Use first chunk only
                 ],
                 "outputs": [
                     {"name": "embedding", "targetName": "contentVector"}
@@ -127,7 +156,7 @@ class AzureSearchSetup:
             }
         ]
         
-        logger.info("Added Azure OpenAI embedding skill to skillset")
+        logger.info("Added text splitting and Azure OpenAI embedding skills to skillset")
         
         skillset_definition = {
             "name": name,
@@ -135,7 +164,8 @@ class AzureSearchSetup:
             "skills": skills
         }
         
-        result = self._make_request("POST", "skillsets", skillset_definition)
+        # Use PUT to create or update the skillset
+        result = self._make_request("PUT", f"skillsets/{name}", skillset_definition)
         
         if "error" in result:
             raise SearchSetupError(f"Failed to create skillset: {result}")
@@ -143,7 +173,7 @@ class AzureSearchSetup:
         logger.info(f"Successfully created skillset: {name}")
         return result
     
-    def create_index(self, name: str = "idx-spofiles") -> Dict[str, Any]:
+    def create_index(self, name: str = "idx-spofiles-v2") -> Dict[str, Any]:
         """Create search index with vector field for embeddings."""
         logger.info(f"Creating index: {name}")
         
@@ -169,6 +199,8 @@ class AzureSearchSetup:
                 "type": "Edm.String",
                 "searchable": True,
                 "filterable": False,
+                "sortable": False,
+                "facetable": False,
                 "retrievable": True,
                 "analyzer": "standard.lucene"
             },
@@ -201,7 +233,21 @@ class AzureSearchSetup:
                 "retrievable": True
             },
             {
-                "name": "entities",
+                "name": "persons",
+                "type": "Collection(Edm.String)",
+                "searchable": True,
+                "filterable": True,
+                "retrievable": True
+            },
+            {
+                "name": "organizations",
+                "type": "Collection(Edm.String)",
+                "searchable": True,
+                "filterable": True,
+                "retrievable": True
+            },
+            {
+                "name": "locations",
                 "type": "Collection(Edm.String)",
                 "searchable": True,
                 "filterable": True,
@@ -212,8 +258,16 @@ class AzureSearchSetup:
                 "type": "Collection(Edm.Single)",
                 "searchable": True,
                 "retrievable": False,
-                "vectorSearchDimensions": 1536,  # text-embedding-3-small dimensions
-                "vectorSearchProfileName": "vector-profile"
+                "dimensions": 1536,  # text-embedding-3-small dimensions
+                "vectorSearchProfile": "vector-profile"
+            },
+            {
+                "name": "chunkVector",
+                "type": "Collection(Edm.Single)",
+                "searchable": True,
+                "retrievable": False,
+                "dimensions": 1536,  # text-embedding-3-small dimensions
+                "vectorSearchProfile": "vector-profile"
             }
         ]
         
@@ -242,7 +296,8 @@ class AzureSearchSetup:
             }
         }
         
-        result = self._make_request("POST", "indexes", index_definition)
+        # Use PUT to create or update the index
+        result = self._make_request("PUT", f"indexes/{name}", index_definition)
         
         if "error" in result:
             raise SearchSetupError(f"Failed to create index: {result}")
@@ -250,9 +305,9 @@ class AzureSearchSetup:
         logger.info(f"Successfully created index: {name}")
         return result
     
-    def create_indexer(self, name: str = "ix-spofiles", 
+    def create_indexer(self, name: str = "ix-spofiles-v2", 
                       data_source_name: str = "ds-spofiles",
-                      index_name: str = "idx-spofiles", 
+                      index_name: str = "idx-spofiles-v2", 
                       skillset_name: str = "ss-spofiles") -> Dict[str, Any]:
         """Create indexer to process documents."""
         logger.info(f"Creating indexer: {name}")
@@ -303,8 +358,16 @@ class AzureSearchSetup:
             ],
             "outputFieldMappings": [
                 {
-                    "sourceFieldName": "/document/entities",
-                    "targetFieldName": "entities"
+                    "sourceFieldName": "/document/persons",
+                    "targetFieldName": "persons"
+                },
+                {
+                    "sourceFieldName": "/document/organizations",
+                    "targetFieldName": "organizations"
+                },
+                {
+                    "sourceFieldName": "/document/locations",
+                    "targetFieldName": "locations"
                 },
                 {
                     "sourceFieldName": "/document/contentVector",
@@ -316,7 +379,8 @@ class AzureSearchSetup:
             }
         }
         
-        result = self._make_request("POST", "indexers", indexer_definition)
+        # Use PUT to create or update the indexer
+        result = self._make_request("PUT", f"indexers/{name}", indexer_definition)
         
         if "error" in result:
             raise SearchSetupError(f"Failed to create indexer: {result}")
@@ -324,19 +388,19 @@ class AzureSearchSetup:
         logger.info(f"Successfully created indexer: {name}")
         return result
     
-    def run_indexer(self, name: str = "ix-spofiles") -> Dict[str, Any]:
+    def run_indexer(self, name: str = "ix-spofiles-v2") -> Dict[str, Any]:
         """Run the indexer to process documents."""
         logger.info(f"Running indexer: {name}")
         
         result = self._make_request("POST", f"indexers/{name}/run")
         
-        if "error" in result:
+        if result and "error" in result:
             raise SearchSetupError(f"Failed to run indexer: {result}")
         
         logger.info(f"Successfully started indexer: {name}")
-        return result
+        return result or {"status": "started"}
     
-    def get_indexer_status(self, name: str = "ix-spofiles") -> Dict[str, Any]:
+    def get_indexer_status(self, name: str = "ix-spofiles-v2") -> Dict[str, Any]:
         """Get indexer status and execution history."""
         logger.info(f"Getting indexer status: {name}")
         
