@@ -168,31 +168,39 @@ sequenceDiagram
 ## Security & Permissions Model
 
 ```mermaid
-graph LR
+ggraph LR
     subgraph "Document ACL Storage"
         DOC[Document]
-        ACL[ACL Field<br/>group1, group2, Everyone]
+        subgraph ACL[ACL Field]
+            G1[group1]
+            G2[group2]
+            GE[Everyone]
+        end
         DOC --> ACL
     end
-    
+
     subgraph "User Context"
         USER[User Login]
         TOKEN[Access Token]
-        GROUPS[User Groups<br/>group1, group3]
+        subgraph UGroups[User Groups]
+            U1[group1]
+            U3[group3]
+        end
         USER --> TOKEN
-        TOKEN --> GROUPS
+        TOKEN --> UGroups
     end
-    
+
     subgraph "Query Filter"
-        FILTER[search.in(acl, group1, group3)]
+        FILTER[search.in(acl, user.groups)]
         MATCH[Document Accessible]
         NOMATCH[Document Filtered Out]
     end
-    
+
     ACL --> FILTER
-    GROUPS --> FILTER
+    UGroups --> FILTER
     FILTER --> MATCH
     FILTER --> NOMATCH
+
 ```
 
 ## Component Responsibilities
