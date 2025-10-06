@@ -50,7 +50,7 @@ graph TB
     subgraph "Microsoft Entra ID"
         AAD[Azure AD Tenant]
         INTERNAL[Internal Users]
-        GUEST[Guest Users (B2B)]
+        GUEST[Guest Users - B2B]
         GROUPS[Security Groups]
         
         AAD --> INTERNAL
