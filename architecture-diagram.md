@@ -171,14 +171,14 @@ sequenceDiagram
 graph LR
     subgraph "Document ACL Storage"
         DOC[Document]
-        ACL[ACL Field<br/>["group1", "group2", "Everyone"]]
+        ACL[ACL Field<br/>"group1", "group2", "Everyone"]
         DOC --> ACL
     end
     
     subgraph "User Context"
         USER[User Login]
         TOKEN[Access Token]
-        GROUPS[User Groups<br/>["group1", "group3"]]
+        GROUPS[User Groups<br/>"group1", "group3"]
         USER --> TOKEN
         TOKEN --> GROUPS
     end
