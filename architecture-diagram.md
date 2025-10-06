@@ -184,7 +184,7 @@ graph LR
     end
     
     subgraph "Query Filter"
-        FILTER[search.in(acl, 'group1,group3')]
+        FILTER[search.in(acl, group1, group3)]
         MATCH[Document Accessible]
         NOMATCH[Document Filtered Out]
     end
