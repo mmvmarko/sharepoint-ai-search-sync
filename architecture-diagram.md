@@ -168,7 +168,7 @@ sequenceDiagram
 ## Security & Permissions Model
 
 ```mermaid
-ggraph LR
+graph LR
     subgraph "Document ACL Storage"
         DOC[Document]
         subgraph ACL[ACL Field]
