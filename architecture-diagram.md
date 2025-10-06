@@ -191,7 +191,7 @@ graph LR
     end
 
     subgraph "Query Filter"
-        FILTER[search.in(acl, user.groups)]
+        FILTER["search.in(acl, user.groups)"]
         MATCH[Document Accessible]
         NOMATCH[Document Filtered Out]
     end
