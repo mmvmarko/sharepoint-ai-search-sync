@@ -6,16 +6,16 @@
 graph TB
     %% SharePoint Source
     subgraph "SharePoint Online"
-        SPO[📁 SharePoint Sites<br/>Documents & Libraries]
-        SPO_FILES[📄 Word, PDF, PPT Files]
+        SPO[ SharePoint Sites<br/>Documents & Libraries]
+        SPO_FILES[ Word, PDF, PPT Files]
         SPO --> SPO_FILES
     end
 
     %% Sync Pipeline
     subgraph "Sync Pipeline"
-        DELTA[🔄 Delta Detection<br/>delta_state.json]
-        GRAPH[🌐 Microsoft Graph API<br/>Device Code Flow]
-        SYNC[⚙️ sharepoint_sync.py<br/>Download & Process]
+        DELTA[ Delta Detection<br/>delta_state.json]
+        GRAPH[ Microsoft Graph API<br/>Device Code Flow]
+        SYNC[️ sharepoint_sync.py<br/>Download & Process]
         
         SPO_FILES -.->|Change Detection| DELTA
         DELTA --> GRAPH
@@ -24,8 +24,8 @@ graph TB
 
     %% Azure Storage
     subgraph "Azure Blob Storage"
-        BLOB[🗄️ Blob Container<br/>sharepoint-ingestion]
-        META[📋 Metadata & ACL<br/>JSON Sidecars]
+        BLOB[️ Blob Container<br/>sharepoint-ingestion]
+        META[ Metadata & ACL<br/>JSON Sidecars]
         
         SYNC --> BLOB
         SYNC --> META
@@ -33,11 +33,11 @@ graph TB
 
     %% Azure AI Search
     subgraph "Azure AI Search Service"
-        DS[📊 Data Source<br/>Blob Connection]
-        SS[🧠 Skillset<br/>OCR, Text Extraction]
-        IDX[🔍 Search Index<br/>Fields + Vector Schema]
-        INDEXER[⚡ Indexer<br/>Scheduled Processing]
-        VECTOR[🎯 Integrated Vectorization<br/>Azure OpenAI Embeddings]
+        DS[ Data Source<br/>Blob Connection]
+        SS[ Skillset<br/>OCR, Text Extraction]
+        IDX[ Search Index<br/>Fields + Vector Schema]
+        INDEXER[ Indexer<br/>Scheduled Processing]
+        VECTOR[ Integrated Vectorization<br/>Azure OpenAI Embeddings]
         
         BLOB --> DS
         DS --> INDEXER
@@ -48,10 +48,10 @@ graph TB
 
     %% Authentication & Authorization
     subgraph "Microsoft Entra ID"
-        AAD[🔐 Azure AD Tenant]
-        INTERNAL[👤 Internal Users]
-        GUEST[👥 Guest Users (B2B)]
-        GROUPS[👥 Security Groups]
+        AAD[ Azure AD Tenant]
+        INTERNAL[ Internal Users]
+        GUEST[ Guest Users (B2B)]
+        GROUPS[ Security Groups]
         
         AAD --> INTERNAL
         AAD --> GUEST
@@ -60,9 +60,9 @@ graph TB
 
     %% Web Application
     subgraph "Web Application"
-        WEBAPP[🌐 Web App Frontend]
-        AUTH[🔑 Authentication<br/>PKCE/Auth Code Flow]
-        PROFILE[👤 User Profile<br/>Groups Resolution]
+        WEBAPP[ Web App Frontend]
+        AUTH[ Authentication<br/>PKCE/Auth Code Flow]
+        PROFILE[ User Profile<br/>Groups Resolution]
         
         WEBAPP --> AUTH
         AUTH --> AAD
@@ -71,10 +71,10 @@ graph TB
 
     %% Search & Query
     subgraph "Query Processing"
-        QUERY[🔍 User Query]
-        FILTER[🔒 Security Filter<br/>ACL + Groups]
-        SEARCH[⚡ Hybrid Search<br/>Vector + Keyword]
-        RESULTS[📋 Search Results<br/>Top-K Documents]
+        QUERY[ User Query]
+        FILTER[ Security Filter<br/>ACL + Groups]
+        SEARCH[ Hybrid Search<br/>Vector + Keyword]
+        RESULTS[ Search Results<br/>Top-K Documents]
         
         WEBAPP --> QUERY
         PROFILE --> FILTER
@@ -86,9 +86,9 @@ graph TB
 
     %% AI Agent
     subgraph "Microsoft 365 Agents SDK"
-        AGENT[🤖 Copilot Studio Agent]
-        RAG[📚 Retrieval Augmented Generation]
-        RESPONSE[💬 Grounded Response]
+        AGENT[ Copilot Studio Agent]
+        RAG[ Retrieval Augmented Generation]
+        RESPONSE[ Grounded Response]
         
         RESULTS --> AGENT
         AGENT --> RAG
@@ -170,23 +170,23 @@ sequenceDiagram
 ```mermaid
 graph LR
     subgraph "Document ACL Storage"
-        DOC[📄 Document]
-        ACL[🔒 ACL Field<br/>["group1", "group2", "Everyone"]]
+        DOC[ Document]
+        ACL[ ACL Field<br/>["group1", "group2", "Everyone"]]
         DOC --> ACL
     end
     
     subgraph "User Context"
-        USER[👤 User Login]
-        TOKEN[🎫 Access Token]
-        GROUPS[👥 User Groups<br/>["group1", "group3"]]
+        USER[ User Login]
+        TOKEN[ Access Token]
+        GROUPS[ User Groups<br/>["group1", "group3"]]
         USER --> TOKEN
         TOKEN --> GROUPS
     end
     
     subgraph "Query Filter"
-        FILTER[🔍 search.in(acl, 'group1,group3')]
-        MATCH[✅ Document Accessible]
-        NOMATCH[❌ Document Filtered Out]
+        FILTER[ search.in(acl, 'group1,group3')]
+        MATCH[ Document Accessible]
+        NOMATCH[ Document Filtered Out]
     end
     
     ACL --> FILTER
