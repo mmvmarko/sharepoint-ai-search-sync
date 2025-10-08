@@ -66,7 +66,10 @@ python main.py setup-search
 python main.py sync
 
 # 3. Run indexer to process documents
-python main.py run-indexer
+python main.py run-indexer ix-pp-portal
+python main.py run-indexer ix-pp-portal-json
+# Aliases also work:
+python main.py run_indexer ix-pp-portal-json
 ```
 
 ### Modern Integrated Vectorization Path (Recommended)
@@ -75,13 +78,18 @@ If you want a Copilot Studio–ready vector index using integrated vectorization
 
 ```bash
 # 1. Sync SharePoint content to Blob (initial or incremental)
+# - access to SPO folder: on behalf ob logged in user, for example marko.vuckovic@comtradegaming.com
+# - uploading files to Blob: storage account key
 python main.py sync
 
 # 2. Create/update stable vertical (ds/ss/idx/ix all with prefix 'spo') and start indexer
+# -admin API key
 python main.py create_vertical --prefix spo
 
-# 3. Monitor indexer status
-python main.py check-integrated-status
+python main.py indexer-status ix-pp-portal
+python main.py indexer-status ix-pp-portal-json
+# Or
+python main.py indexer_status ix-pp-portal-json
 
 # (Optional) Run a disposable test vertical
 python main.py test_integrated --prefix demo
@@ -192,8 +200,9 @@ python main.py full-setup
 # Individual operations
 python main.py sync                    # Sync SharePoint to blob storage
 python main.py setup-search           # Set up search pipeline with vector embeddings
-python main.py run-indexer            # Process documents in search
-python main.py indexer-status         # Check indexer progress
+python main.py run-indexer ix-pp-portal            # Process documents in main vertical
+python main.py run-indexer ix-pp-portal-json       # Process OpenAPI chunks in JSON vertical
+python main.py indexer-status ix-pp-portal-json    # Check JSON indexer progress
 python main.py list-resources         # List search resources
 python main.py setup-integrated-vectorization  # Create integrated vectorization (Copilot Studio ready) index
 python main.py check-integrated-status         # Check integrated pipeline indexer status
@@ -368,3 +377,16 @@ For issues and questions:
 ## License
 
 This project is provided as-is for educational and demonstration purposes.
+## OpenAPI / Swagger JSON Vertical
+
+To ingest OpenAPI chunks:
+1. Upload your chunk `.txt` files to the JSON container (e.g. `pp-portal-navi-json`).
+2. Run the JSON indexer:
+   ```powershell
+   python main.py run-indexer ix-pp-portal-json
+   ```
+3. Check status:
+   ```powershell
+   python main.py indexer-status ix-pp-portal-json
+   ```
+4. Use the Copilot Studio agent with index `idx-pp-portal-json` as a knowledge source.

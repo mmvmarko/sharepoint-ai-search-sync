@@ -13,207 +13,93 @@ import json
 import click
 from typing import Dict, Any
 
-# Add the src and config directories to the path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.extend([
-    os.path.join(current_dir, 'src'),
-    os.path.join(current_dir, 'config')
-])
+# Treat repository as a namespace: ensure parent directory is on path once
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 
-from sharepoint_sync import SharePointSync, SharePointSyncError
-from azure_search_setup import AzureSearchSetup, SearchSetupError
-from azure_search_integrated_vectorization import AzureSearchIntegratedVectorization
-from settings import config
+from src.sharepoint_sync import SharePointSync, SharePointSyncError
+from src.azure_search_setup import AzureSearchSetup, SearchSetupError
+from src.azure_search_integrated_vectorization import AzureSearchIntegratedVectorization
+from config.settings import config
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('sync.log')
-    ]
-)
 logger = logging.getLogger(__name__)
 
+# --------------------------------------------------
+# Click root group
+# --------------------------------------------------
 @click.group()
 @click.option('--debug', is_flag=True, help='Enable debug logging')
-def cli(debug):
-    """SharePoint to Azure AI Search Sync Tool"""
+def cli(debug: bool = False):
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
-@cli.command()
-@click.option('--check-config', is_flag=True, help='Only check configuration without running sync')
-def sync(check_config):
-    """Sync SharePoint folder to Azure Blob Storage"""
-    logger.info("Starting SharePoint sync operation...")
-    
-    try:
-        # Check configuration
-        if not config.validate_sharepoint_config():
-            logger.error("SharePoint configuration is incomplete. Please check your .env file.")
-            logger.error("Required: TENANT_ID, CLIENT_ID, SITE_ID, DRIVE_ID")
-            sys.exit(1)
-        
-        if not config.validate_storage_config():
-            logger.error("Azure Storage configuration is incomplete. Please check your .env file.")
-            logger.error("Required: AZ_STORAGE_URL, AZ_CONTAINER")
-            logger.error("Note: Ensure your app registration has 'Storage Blob Data Contributor' role")
-            sys.exit(1)
-        
-        logger.info("Configuration validation passed")
-        
-        if check_config:
-            print("✓ Configuration is valid")
-            return
-        
-        # Run sync
-        sp_sync = SharePointSync()
-        summary = sp_sync.sync_sharepoint_folder()
-        
-        # Display results
-        print("\\n=== Sync Summary ===")
-        print(f"Total files found: {summary['total_files']}")
-        print(f"Successfully processed: {summary['processed_files']}")
-        print(f"Success rate: {summary['success_rate']:.1f}%")
-        
-        if summary['errors']:
-            print(f"\\nErrors ({len(summary['errors'])}):")
-            for error in summary['errors'][:5]:  # Show first 5 errors
-                print(f"  - {error}")
-            if len(summary['errors']) > 5:
-                print(f"  ... and {len(summary['errors']) - 5} more errors")
-        
-        if summary['processed_files'] > 0:
-            print("\\n✓ Sync completed successfully!")
-            print("Next step: Run indexer to process documents in Azure AI Search")
-        
-    except SharePointSyncError as e:
-        logger.error(f"SharePoint sync failed: {e}")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Unexpected error during sync: {e}")
-        sys.exit(1)
 
-@cli.command()
-@click.option('--check-config', is_flag=True, help='Only check configuration without setting up search')
-def setup_search(check_config):
-    """Set up Azure AI Search pipeline with vector embeddings (data source, index, skillset, indexer)"""
-    logger.info("Setting up Azure AI Search pipeline with vector embeddings...")
-    
+# --------------------------------------------------
+# Helper for generic indexer run
+# --------------------------------------------------
+def _run_indexer_generic(name: str):
+    """Attempt to run indexer with integrated client; fall back to legacy."""
     try:
-        # Check configuration
-        if not config.validate_search_config():
-            logger.error("Azure AI Search configuration is incomplete. Please check your .env file.")
-            logger.error("Required: SEARCH_SERVICE_NAME, SEARCH_API_KEY, SEARCH_ENDPOINT")
-            sys.exit(1)
-        
-        if not config.validate_storage_config():
-            logger.error("Azure Storage configuration is incomplete. Please check your .env file.")
-            logger.error("Required: AZ_STORAGE_URL, AZ_CONTAINER")
-            logger.error("Note: Ensure your app registration has 'Storage Blob Data Contributor' role")
-            sys.exit(1)
-        
-        if not config.validate_openai_config():
-            logger.error("Azure OpenAI configuration is incomplete. Vector embeddings are required.")
-            logger.error("Required: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY")
-            sys.exit(1)
-        
-        logger.info("Configuration validation passed - vector embeddings enabled")
-        
-        if check_config:
-            print("✓ Configuration is valid")
-            print("✓ Azure OpenAI configuration is valid for vector embeddings")
-            print("✓ Using Service Principal authentication for Storage")
-            return
-        
-        # Set up search pipeline
-        search_setup = AzureSearchSetup()
-        results = search_setup.setup_complete_pipeline()
-        
-        if "error" in results:
-            logger.error(f"Search setup failed: {results['error']}")
-            sys.exit(1)
-        
-        print("\\n=== Azure AI Search Pipeline Setup Complete ===")
-        for resource_type, result in results.items():
-            if isinstance(result, dict) and "name" in result:
-                print(f"✓ {resource_type.capitalize()}: {result['name']}")
-        
-        print("\\n✓ Vector embeddings enabled for semantic search")
-        print("\\nNext steps:")
-        print("1. Run 'python main.py sync' to populate blob storage")
-        print("2. Run 'python main.py run-indexer' to process documents")
-        print("3. Configure Copilot Studio with your search service")
-        
-    except SearchSetupError as e:
-        logger.error(f"Search setup failed: {e}")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Unexpected error during search setup: {e}")
-        sys.exit(1)
+        iv = AzureSearchIntegratedVectorization()
+        iv.run_indexer(name)
+        return iv.get_indexer_status(name)
+    except Exception:
+        legacy = AzureSearchSetup()
+        legacy.run_indexer(name)
+        return legacy.get_indexer_status(name)
 
-@cli.command()
-@click.argument('name', default='ix-spofiles-v2')
+@cli.command('run-indexer')
+@click.argument('name')
 def run_indexer(name):
-    """Run the Azure AI Search indexer to process documents"""
+    """Run any indexer (legacy or integrated)."""
     logger.info(f"Running indexer: {name}")
-    
     try:
-        search_setup = AzureSearchSetup()
-        result = search_setup.run_indexer(name)
-        print(f"✓ Indexer '{name}' started successfully")
-        
-        # Show initial status
-        status = search_setup.get_indexer_status(name)
-        if "lastResult" in status:
-            last_result = status["lastResult"]
-            print(f"Status: {last_result.get('status', 'Unknown')}")
-            if "itemsProcessed" in last_result:
-                print(f"Items processed in last run: {last_result['itemsProcessed']}")
-        
-        print(f"\\nUse 'python main.py indexer-status {name}' to monitor progress")
-        
-    except SearchSetupError as e:
+        status = _run_indexer_generic(name)
+        last = status.get('lastResult', {})
+        print(f"✓ Indexer '{name}' triggered")
+        if last:
+            print(f"Last run status: {last.get('status','unknown')} itemsProcessed={last.get('itemsProcessed')} failed={last.get('itemsFailed')}")
+        print(f"Use: python main.py indexer-status {name}")
+    except Exception as e:
         logger.error(f"Failed to run indexer: {e}")
+        print(f"❌ Failed to run indexer: {e}")
         sys.exit(1)
 
-@cli.command()
-@click.argument('name', default='ix-spofiles-v2')
+@cli.command('indexer-status')
+@click.argument('name')
 def indexer_status(name):
-    """Check Azure AI Search indexer status and execution history"""
+    """Show status/history for any indexer (legacy or integrated)."""
     try:
-        search_setup = AzureSearchSetup()
-        status = search_setup.get_indexer_status(name)
-        
-        print(f"\\n=== Indexer Status: {name} ===")
-        print(f"Status: {status.get('status', 'Unknown')}")
-        
-        if "lastResult" in status:
-            last_result = status["lastResult"]
-            print(f"\\nLast Execution:")
-            print(f"  Status: {last_result.get('status', 'Unknown')}")
-            print(f"  Start Time: {last_result.get('startTime', 'Unknown')}")
-            print(f"  End Time: {last_result.get('endTime', 'Unknown')}")
-            print(f"  Items Processed: {last_result.get('itemsProcessed', 0)}")
-            print(f"  Items Failed: {last_result.get('itemsFailed', 0)}")
-            
-            if "errors" in last_result and last_result["errors"]:
-                print(f"\\nErrors ({len(last_result['errors'])}):")
-                for error in last_result["errors"][:5]:  # Show first 5 errors
-                    print(f"  - {error.get('errorMessage', 'Unknown error')}")
-        
-        if "executionHistory" in status:
-            history = status["executionHistory"]
-            print(f"\\nExecution History ({len(history)} runs):")
-            for i, execution in enumerate(history[:3]):  # Show last 3 runs
-                status_str = execution.get('status', 'Unknown')
-                start_time = execution.get('startTime', 'Unknown')
-                items = execution.get('itemsProcessed', 0)
-                print(f"  {i+1}. {start_time} - {status_str} ({items} items)")
-        
-    except SearchSetupError as e:
+        try:
+            iv = AzureSearchIntegratedVectorization()
+            status = iv.get_indexer_status(name)
+        except Exception:
+            setup = AzureSearchSetup()
+            status = setup.get_indexer_status(name)
+
+        print(f"\n=== Indexer Status: {name} ===")
+        print(f"Overall Status: {status.get('status','unknown')}")
+        last = status.get('lastResult', {})
+        if last:
+            print("\nLast Run:")
+            print(f"  Status          : {last.get('status')}")
+            print(f"  Start Time      : {last.get('startTime')}")
+            print(f"  End Time        : {last.get('endTime')}")
+            print(f"  Items Processed : {last.get('itemsProcessed')}")
+            print(f"  Items Failed    : {last.get('itemsFailed')}")
+            errs = last.get('errors') or []
+            if errs:
+                print(f"  Errors ({len(errs)} up to 5 shown):")
+                for err in errs[:5]:
+                    print(f"    - {err.get('errorMessage','?')}")
+        history = status.get('executionHistory') or []
+        if history:
+            print(f"\nRecent Executions ({min(5,len(history))}):")
+            for i, h in enumerate(history[:5]):
+                print(f"  {i+1}. {h.get('startTime')} -> {h.get('status')} items={h.get('itemsProcessed')}")
+    except Exception as e:
         logger.error(f"Failed to check indexer status: {e}")
+        print(f"❌ Failed to check indexer status: {e}")
         sys.exit(1)
 
 @cli.command()
@@ -222,16 +108,14 @@ def list_resources():
     try:
         search_setup = AzureSearchSetup()
         resources = search_setup.list_resources()
-        
-        print("\\n=== Azure AI Search Resources ===")
+        print("\n=== Azure AI Search Resources ===")
         for resource_type, items in resources.items():
-            print(f"\\n{resource_type.capitalize()}:")
+            print(f"\n{resource_type.capitalize()}:")
             if items:
                 for item in items:
                     print(f"  - {item}")
             else:
                 print("  (none)")
-                
     except SearchSetupError as e:
         logger.error(f"Failed to list resources: {e}")
         sys.exit(1)
@@ -395,20 +279,51 @@ def test_integrated(prefix):
         sys.exit(1)
 
 @cli.command(name='create_vertical')
-@click.option('--prefix', default='spo', help='Prefix for vertical resource set (stable names)')
-def create_vertical(prefix):
-    """Create or update a stable integrated vectorization vertical (ds/ss/idx/ix) and start indexing."""
-    logger.info(f"Creating vertical with prefix '{prefix}'")
+@click.option('--prefix', default='spo', help='Prefix for vertical resource set (fallback for names)')
+@click.option('--container', default=None, help='Override blob container name (defaults to AZ_CONTAINER)')
+@click.option('--json-container', default=None, help='Override blob container for JSON vertical when --split-json is used')
+@click.option('--ds-name', default=None, help='Explicit data source name (optional)')
+@click.option('--ss-name', default=None, help='Explicit skillset name (optional)')
+@click.option('--idx-name', default=None, help='Explicit index name (optional)')
+@click.option('--ix-name', default=None, help='Explicit indexer name (optional)')
+@click.option('--split-json', is_flag=True, default=False, help='Create separate -json vertical for .json files')
+def create_vertical(prefix, container, json_container, ds_name, ss_name, idx_name, ix_name, split_json):
+    """Create or update an integrated vectorization vertical with customizable names.
+
+    If explicit names are not provided they are derived from prefix:
+      ds-{prefix}, ss-{prefix}, idx-{prefix}, ix-{prefix}
+    """
+    logger.info(f"Creating vertical with prefix='{prefix}' container='{container}' explicit names ds={ds_name} ss={ss_name} idx={idx_name} ix={ix_name}")
     try:
         search_setup = AzureSearchIntegratedVectorization()
-        result = search_setup.create_vertical(prefix)
+        result = search_setup.create_vertical(
+            prefix,
+            container=container,
+            json_container=json_container,
+            data_source_name=ds_name,
+            skillset_name=ss_name,
+            index_name=idx_name,
+            indexer_name=ix_name,
+            create_json_vertical=split_json
+        )
         print("\n=== Vertical Resources (Stable) ===")
         print(f"Data Source: {result['dataSource']}")
         print(f"Skillset   : {result['skillset']}")
         print(f"Index      : {result['index']}")
         print(f"Indexer    : {result['indexer']} (started)")
+        if container:
+            print(f"Container  : {container}")
+        if result.get('json'):
+            jr = result['json']
+            print("\n--- JSON Vertical ---")
+            print(f"Data Source: {jr['dataSource']}")
+            print(f"Skillset   : {jr['skillset']}")
+            print(f"Index      : {jr['index']}")
+            print(f"Indexer    : {jr['indexer']} (started)")
+            if json_container:
+                print(f"Container  : {json_container}")
         print("\nNext steps:")
-        print(f"1. Monitor: python main.py check-integrated-status")
+        print("1. Monitor: python main.py check-integrated-status")
         print(f"2. Run a vector query against index {result['index']} when status shows success")
         print("3. Use this index as knowledge source in Copilot Studio if desired")
     except SearchSetupError as e:
@@ -435,12 +350,10 @@ def delete_vertical(prefix):
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         sys.exit(1)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        sys.exit(1)
+
+# Manual aliases for convenience (underscore forms)
+cli.add_command(run_indexer, name='run_indexer')
+cli.add_command(indexer_status, name='indexer_status')
 
 if __name__ == '__main__':
     cli()

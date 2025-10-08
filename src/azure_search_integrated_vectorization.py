@@ -64,9 +64,14 @@ class AzureSearchIntegratedVectorization:
             logger.error(f"Request failed: {str(e)}")
             raise SearchSetupError(f"HTTP request failed: {str(e)}")
 
-    def create_data_source(self, name: str = "ds-spofiles-integrated") -> Dict[str, Any]:
-        """Create Azure Storage data source."""
-        logger.info(f"Creating data source: {name}")
+    def create_data_source(self, name: str = "ds-spofiles-integrated", container: Optional[str] = None) -> Dict[str, Any]:
+        """Create or update an Azure Blob data source.
+
+        Parameters:
+            name: Data source name.
+            container: Optional override for blob container (defaults to config.az_container).
+        """
+        logger.info(f"Creating data source: {name} (container={container or self.config.az_container})")
         
         if not self.config.validate_storage_config():
             raise SearchSetupError("Azure Storage configuration is incomplete. Check your .env file.")
@@ -81,12 +86,8 @@ class AzureSearchIntegratedVectorization:
         data_source_definition = {
             "name": name,
             "type": "azureblob",
-            "credentials": {
-                "connectionString": connection_string
-            },
-            "container": {
-                "name": self.config.az_container
-            },
+            "credentials": {"connectionString": connection_string},
+            "container": {"name": container or self.config.az_container},
             "description": "SharePoint files storage for integrated vectorization"
         }
         
@@ -156,6 +157,53 @@ class AzureSearchIntegratedVectorization:
         if "error" in result:
             raise SearchSetupError(f"Failed to create skillset: {result}")
         logger.info(f"Successfully created skillset: {name}")
+        return result
+
+    def create_json_skillset(self, name: str) -> Dict[str, Any]:
+        """Create a simplified skillset for JSON specs / structured docs.
+
+        Strategy: No splitting – embed truncated raw content (first N characters) to keep vector focused.
+        (Future enhancement: parse & restructure OpenAPI parts before embedding.)
+        """
+        logger.info(f"Creating JSON skillset: {name}")
+        skills: List[Dict[str, Any]] = [
+            # Use SplitSkill in 'pages' mode with large max length to approximate truncation
+            {
+                "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+                "name": "split-json",
+                "description": "Pseudo-truncate JSON (first page) for embedding",
+                "context": "/document",
+                "textSplitMode": "pages",
+                "maximumPageLength": 16000,
+                "pageOverlapLength": 0,
+                "inputs": [
+                    {"name": "text", "source": "/document/content"}
+                ],
+                "outputs": [
+                    {"name": "textItems", "targetName": "pages"}
+                ]
+            },
+            {
+                "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+                "name": "json-embedding",
+                "context": "/document",
+                "resourceUri": self.config.azure_openai_endpoint,
+                "apiKey": self.config.azure_openai_api_key,
+                "deploymentId": self.config.azure_openai_embedding_model,
+                "modelName": self.config.azure_openai_embedding_model,
+                "inputs": [
+                    {"name": "text", "source": "/document/pages/0"}
+                ],
+                "outputs": [
+                    {"name": "embedding", "targetName": "content_vector"}
+                ]
+            }
+        ]
+        definition = {"name": name, "description": "Skillset for JSON documents (direct truncate + embedding)", "skills": skills}
+        result = self._make_request("PUT", f"skillsets/{name}", definition)
+        if "error" in result:
+            raise SearchSetupError(f"Failed to create JSON skillset: {result}")
+        logger.info(f"Successfully created JSON skillset: {name}")
         return result
 
     def create_index_with_integrated_vectorization(self, name: str = "idx-spofiles-integrated") -> Dict[str, Any]:
@@ -279,7 +327,9 @@ class AzureSearchIntegratedVectorization:
     def create_indexer_with_integrated_vectorization(self, name: str = "ix-spofiles-integrated",
                                                      data_source_name: str = "ds-spofiles-integrated",
                                                      index_name: str = "idx-spofiles-integrated",
-                                                     skillset_name: str = "ss-spofiles-integrated") -> Dict[str, Any]:
+                                                     skillset_name: str = "ss-spofiles-integrated",
+                                                     indexed_extensions: str = ".pdf,.docx,.pptx,.txt,.xlsx,.html,.md",
+                                                     excluded_extensions: str = ".xml") -> Dict[str, Any]:
         """Create indexer wired to skillset producing embeddings -> vector field."""
         logger.info(f"Creating indexer with integrated vectorization: {name}")
 
@@ -292,8 +342,8 @@ class AzureSearchIntegratedVectorization:
                 "configuration": {
                     "dataToExtract": "contentAndMetadata",
                     "parsingMode": "default",
-                    "indexedFileNameExtensions": ".pdf,.docx,.pptx,.txt,.xlsx,.html,.md",
-                    "excludedFileNameExtensions": ".json,.xml",
+                    "indexedFileNameExtensions": indexed_extensions,
+                    "excludedFileNameExtensions": excluded_extensions,
                     "failOnUnsupportedContentType": False,
                     "failOnUnprocessableDocument": False
                 }
@@ -472,41 +522,69 @@ class AzureSearchIntegratedVectorization:
         }
 
     # ------------------------ STABLE PREFIX VERTICAL ------------------------
-    def create_vertical(self, prefix: str) -> Dict[str, Any]:
-        """Create (or update) a stable set of resources using a given prefix without random suffix.
+    def create_vertical(self, prefix: str,
+                        container: Optional[str] = None,
+                        json_container: Optional[str] = None,
+                        data_source_name: Optional[str] = None,
+                        skillset_name: Optional[str] = None,
+                        index_name: Optional[str] = None,
+                        indexer_name: Optional[str] = None,
+                        create_json_vertical: bool = False) -> Dict[str, Any]:
+        """Create or update a vertical (data source, skillset, index, indexer).
 
-        Names:
-          Data Source: ds-{prefix}
-          Skillset   : ss-{prefix}
-          Index      : idx-{prefix}
-          Indexer    : ix-{prefix}
-        Existing resources are updated in-place.
+        You may specify explicit names; otherwise names are derived from prefix:
+            ds-{prefix}, ss-{prefix}, idx-{prefix}, ix-{prefix}
+
+        Parameters:
+            prefix: Base prefix (sanitized) for fallback names.
+            container: Optional blob container override (defaults to config.az_container).
+            data_source_name, skillset_name, index_name, indexer_name: Optional explicit resource names.
         """
-        # Normalize prefix to allowed characters (lowercase, hyphen, alnum)
         safe = ''.join(c for c in prefix.lower() if c.isalnum() or c == '-')[:48]
         if not safe:
             raise SearchSetupError("Prefix resulted in empty safe name")
 
-        ds_name = f"ds-{safe}"
-        ss_name = f"ss-{safe}"
-        idx_name = f"idx-{safe}"
-        ix_name = f"ix-{safe}"
+        ds_name = data_source_name or f"ds-{safe}"
+        ss_name = skillset_name or f"ss-{safe}"
+        idx_name = index_name or f"idx-{safe}"
+        ix_name = indexer_name or f"ix-{safe}"
 
-        logger.info(f"Creating/Updating vertical resources for prefix '{safe}'")
-        ds = self.create_data_source(ds_name)
+        logger.info("Creating/Updating vertical resources with settings: "
+                    f"prefix={safe} ds={ds_name} ss={ss_name} idx={idx_name} ix={ix_name} container={container or self.config.az_container}")
+
+        ds = self.create_data_source(ds_name, container=container)
         idx = self.create_index_with_integrated_vectorization(idx_name)
         ss = self.create_skillset(ss_name)
-        ix = self.create_indexer_with_integrated_vectorization(ix_name, ds_name, idx_name, ss_name)
+        ix = self.create_indexer_with_integrated_vectorization(ix_name, ds_name, idx_name, ss_name,
+                                                               indexed_extensions=".pdf,.docx,.pptx,.txt,.xlsx,.html,.md",
+                                                               excluded_extensions=".xml,.json")
         run = self.run_indexer(ix_name)
 
-        return {
-            "status": "started",
-            "dataSource": ds_name,
-            "index": idx_name,
-            "skillset": ss_name,
-            "indexer": ix_name,
-            "run": run
-        }
+        json_resources = None
+        if create_json_vertical:
+            json_suffix = f"{safe}-json"
+            json_ds = f"ds-{json_suffix}"  # reuse same container
+            json_ss = f"ss-{json_suffix}"
+            json_idx = f"idx-{json_suffix}"
+            json_ix = f"ix-{json_suffix}"
+            logger.info(f"Creating JSON vertical (suffix -json) resources: ds={json_ds} idx={json_idx} container={json_container or container or self.config.az_container}")
+            # Allow different container for JSON vertical
+            self.create_data_source(json_ds, container=json_container or container)
+            self.create_index_with_integrated_vectorization(json_idx)
+            self.create_json_skillset(json_ss)
+            # Allow both raw JSON specs and preprocessed chunk .txt files
+            self.create_indexer_with_integrated_vectorization(
+                json_ix,
+                json_ds,
+                json_idx,
+                json_ss,
+                indexed_extensions=".json,.txt",
+                excluded_extensions=".xml"
+            )
+            self.run_indexer(json_ix)
+            json_resources = {"dataSource": json_ds, "index": json_idx, "skillset": json_ss, "indexer": json_ix}
+
+        return {"status": "started", "dataSource": ds_name, "index": idx_name, "skillset": ss_name, "indexer": ix_name, "run": run, "json": json_resources}
 
     def delete_vertical(self, prefix: str) -> Dict[str, Any]:
         """Delete data source, indexer, skillset, and index associated with prefix.
