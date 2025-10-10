@@ -1,0 +1,84 @@
+﻿{
+    "@odata.context":  "https://search-service-ai-prod.search.windows.net/$metadata#Microsoft.Azure.Search.V2024_07_01.IndexerExecutionInfo",
+    "name":  "ix-pp-portal-code",
+    "status":  "running",
+    "lastResult":  {
+                       "status":  "transientFailure",
+                       "errorMessage":  null,
+                       "startTime":  "2025-10-10T13:02:28.759Z",
+                       "endTime":  "2025-10-10T13:02:29.925Z",
+                       "itemsProcessed":  10,
+                       "itemsFailed":  1,
+                       "initialTrackingState":  "{\r\n  \"lastFullEnumerationStartTime\": \"0001-01-01T00:00:00Z\",\r\n  \"lastAttemptedEnumerationStartTime\": \"2025-10-10T13:01:51.103Z\",\r\n  \"nameHighWaterMark\": \"https://storagectgaiprod.blob.core.windows.net/pp-portal-code/code_corpus/BKI__BETAKI__bkipp-main/lighthouserc.js__1__1ca29787fc.txt\"\r\n}",
+                       "finalTrackingState":  "{\"LastFullEnumerationStartTime\":\"0001-01-01T00:00:00+00:00\",\"LastAttemptedEnumerationStartTime\":\"2025-10-10T13:01:58.759904+00:00\",\"NameHighWaterMark\":\"https://storagectgaiprod.blob.core.windows.net/pp-portal-code/code_corpus/BKI__BETAKI__bkipp-main/lighthouserc.js__1__1ca29787fc.txt\"}",
+                       "errors":  [
+                                      {
+                                          "key":  "localId=https%3a%2f%2fstoragectgaiprod.blob.core.windows.net%2fpp-portal-code%2fcode_corpus%2fBKI__BETAKI__bkipp-main%2fsrc%2fapp%2f%40core%2fdata-store.service.ts__1__286620a2b8.txt\u0026documentKey=https%3a%2f%2fstoragectgaiprod.blob.core.windows.net%2fpp-portal-code%2fcode_corpus%2fBKI__BETAKI__bkipp-main%2fsrc%2fapp%2f%40core%2fdata-store.service.ts__1__286620a2b8.txt",
+                                          "statusCode":  400,
+                                          "name":  "Projection.SearchIndex.MergeOrUpload.idx-pp-portal-code",
+                                          "errorMessage":  "Could not \u0027Index\u0027 document to the search index",
+                                          "details":  "Field \u0027content\u0027 contains a term that is too large to process. The max length for UTF-8 encoded terms is 32766 bytes. The most likely cause of this error is that filtering, sorting, and/or faceting are enabled on this field, which causes the entire field value to be indexed as a single term. Please avoid the use of these options for large fields.",
+                                          "documentationLink":  "https://go.microsoft.com/fwlink/?linkid=2106028"
+                                      }
+                                  ],
+                       "warnings":  [
+
+                                    ],
+                       "metrics":  null
+                   },
+    "executionHistory":  [
+                             {
+                                 "status":  "transientFailure",
+                                 "errorMessage":  null,
+                                 "startTime":  "2025-10-10T13:02:28.759Z",
+                                 "endTime":  "2025-10-10T13:02:29.925Z",
+                                 "itemsProcessed":  10,
+                                 "itemsFailed":  1,
+                                 "initialTrackingState":  "{\r\n  \"lastFullEnumerationStartTime\": \"0001-01-01T00:00:00Z\",\r\n  \"lastAttemptedEnumerationStartTime\": \"2025-10-10T13:01:51.103Z\",\r\n  \"nameHighWaterMark\": \"https://storagectgaiprod.blob.core.windows.net/pp-portal-code/code_corpus/BKI__BETAKI__bkipp-main/lighthouserc.js__1__1ca29787fc.txt\"\r\n}",
+                                 "finalTrackingState":  "{\"LastFullEnumerationStartTime\":\"0001-01-01T00:00:00+00:00\",\"LastAttemptedEnumerationStartTime\":\"2025-10-10T13:01:58.759904+00:00\",\"NameHighWaterMark\":\"https://storagectgaiprod.blob.core.windows.net/pp-portal-code/code_corpus/BKI__BETAKI__bkipp-main/lighthouserc.js__1__1ca29787fc.txt\"}",
+                                 "errors":  [
+                                                {
+                                                    "key":  "localId=https%3a%2f%2fstoragectgaiprod.blob.core.windows.net%2fpp-portal-code%2fcode_corpus%2fBKI__BETAKI__bkipp-main%2fsrc%2fapp%2f%40core%2fdata-store.service.ts__1__286620a2b8.txt\u0026documentKey=https%3a%2f%2fstoragectgaiprod.blob.core.windows.net%2fpp-portal-code%2fcode_corpus%2fBKI__BETAKI__bkipp-main%2fsrc%2fapp%2f%40core%2fdata-store.service.ts__1__286620a2b8.txt",
+                                                    "statusCode":  400,
+                                                    "name":  "Projection.SearchIndex.MergeOrUpload.idx-pp-portal-code",
+                                                    "errorMessage":  "Could not \u0027Index\u0027 document to the search index",
+                                                    "details":  "Field \u0027content\u0027 contains a term that is too large to process. The max length for UTF-8 encoded terms is 32766 bytes. The most likely cause of this error is that filtering, sorting, and/or faceting are enabled on this field, which causes the entire field value to be indexed as a single term. Please avoid the use of these options for large fields.",
+                                                    "documentationLink":  "https://go.microsoft.com/fwlink/?linkid=2106028"
+                                                }
+                                            ],
+                                 "warnings":  [
+
+                                              ],
+                                 "metrics":  null
+                             },
+                             {
+                                 "status":  "transientFailure",
+                                 "errorMessage":  null,
+                                 "startTime":  "2025-10-10T13:02:21.103Z",
+                                 "endTime":  "2025-10-10T13:02:25.879Z",
+                                 "itemsProcessed":  40,
+                                 "itemsFailed":  1,
+                                 "initialTrackingState":  "{\r\n  \"lastFullEnumerationStartTime\": \"0001-01-01T00:00:00Z\",\r\n  \"lastAttemptedEnumerationStartTime\": \"2025-10-10T13:02:21.13Z\",\r\n  \"nameHighWaterMark\": null\r\n}",
+                                 "finalTrackingState":  "{\"LastFullEnumerationStartTime\":\"0001-01-01T00:00:00+00:00\",\"LastAttemptedEnumerationStartTime\":\"2025-10-10T13:01:51.1031692+00:00\",\"NameHighWaterMark\":\"https://storagectgaiprod.blob.core.windows.net/pp-portal-code/code_corpus/BKI__BETAKI__bkipp-main/lighthouserc.js__1__1ca29787fc.txt\"}",
+                                 "errors":  [
+                                                {
+                                                    "key":  "localId=https%3a%2f%2fstoragectgaiprod.blob.core.windows.net%2fpp-portal-code%2fcode_corpus%2fBKI__BETAKI__bkipp-main%2fsrc%2fapp%2f%40core%2fdata-store.service.ts__1__286620a2b8.txt\u0026documentKey=https%3a%2f%2fstoragectgaiprod.blob.core.windows.net%2fpp-portal-code%2fcode_corpus%2fBKI__BETAKI__bkipp-main%2fsrc%2fapp%2f%40core%2fdata-store.service.ts__1__286620a2b8.txt",
+                                                    "statusCode":  400,
+                                                    "name":  "Projection.SearchIndex.MergeOrUpload.idx-pp-portal-code",
+                                                    "errorMessage":  "Could not \u0027Index\u0027 document to the search index",
+                                                    "details":  "Field \u0027content\u0027 contains a term that is too large to process. The max length for UTF-8 encoded terms is 32766 bytes. The most likely cause of this error is that filtering, sorting, and/or faceting are enabled on this field, which causes the entire field value to be indexed as a single term. Please avoid the use of these options for large fields.",
+                                                    "documentationLink":  "https://go.microsoft.com/fwlink/?linkid=2106028"
+                                                }
+                                            ],
+                                 "warnings":  [
+
+                                              ],
+                                 "metrics":  null
+                             }
+                         ],
+    "limits":  {
+                   "maxRunTime":  "PT2H",
+                   "maxDocumentExtractionSize":  134217728,
+                   "maxDocumentContentCharactersToExtract":  4194304
+               }
+}

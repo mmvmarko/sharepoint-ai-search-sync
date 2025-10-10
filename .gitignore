@@ -46,6 +46,8 @@ logs/
 # Application specific
 delta_state.json
 sync.log
+/code_corpus
+/code_corpus_v2
 
 # OS specific
 .DS_Store
