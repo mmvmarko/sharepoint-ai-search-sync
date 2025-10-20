@@ -3,6 +3,8 @@
 A Python application that syncs SharePoint Online documents to Azure Blob Storage and configures Azure AI Search for powerful document search and retrieval, specifically designed to work with Microsoft Copilot Studio.
 
 > For a full operational walkthrough (workflows, command glossary, troubleshooting), see **[guide.md](./guide.md)**.
+> 
+> **NEW**: For automated vertical creation with intelligent file analysis, see **[INTELLIGENT_VERTICALS.md](./INTELLIGENT_VERTICALS.md)**.
 
 ## Features
 
@@ -11,6 +13,7 @@ A Python application that syncs SharePoint Online documents to Azure Blob Storag
 - **Azure Blob Storage**: Stores documents with rich metadata including original SharePoint URLs
 - **Azure AI Search with Vector Embeddings**: Full-text search with semantic vector search for enhanced relevance
 - **Integrated Vectorization Mode**: Optional simplified pipeline using Azure AI Search vectorizers + embedding skill for Copilot Studio compatibility
+- **🆕 Intelligent Vertical Creator**: Automatically analyzes source files and suggests optimal vertical configurations (chunking, splitting, grouping)
 - **Copilot Studio Ready**: Preserves SharePoint URLs for proper citation links
 - **User Authentication**: Uses delegated authentication (device code flow) for secure access
 - **Robust Error Handling**: Comprehensive logging and error recovery
