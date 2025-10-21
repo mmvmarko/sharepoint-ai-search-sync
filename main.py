@@ -287,7 +287,8 @@ def test_integrated(prefix):
 @click.option('--idx-name', default=None, help='Explicit index name (optional)')
 @click.option('--ix-name', default=None, help='Explicit indexer name (optional)')
 @click.option('--split-json', is_flag=True, default=False, help='Create separate -json vertical for .json files')
-def create_vertical(prefix, container, json_container, ds_name, ss_name, idx_name, ix_name, split_json):
+@click.option('--json-only', is_flag=True, default=False, help='Create only the -json vertical (no base vertical)')
+def create_vertical(prefix, container, json_container, ds_name, ss_name, idx_name, ix_name, split_json, json_only):
     """Create or update an integrated vectorization vertical with customizable names.
 
     If explicit names are not provided they are derived from prefix:
@@ -295,6 +296,8 @@ def create_vertical(prefix, container, json_container, ds_name, ss_name, idx_nam
     """
     logger.info(f"Creating vertical with prefix='{prefix}' container='{container}' explicit names ds={ds_name} ss={ss_name} idx={idx_name} ix={ix_name}")
     try:
+        if split_json and json_only:
+            raise SearchSetupError("--split-json and --json-only are mutually exclusive. Use one or the other.")
         search_setup = AzureSearchIntegratedVectorization()
         result = search_setup.create_vertical(
             prefix,
@@ -304,15 +307,26 @@ def create_vertical(prefix, container, json_container, ds_name, ss_name, idx_nam
             skillset_name=ss_name,
             index_name=idx_name,
             indexer_name=ix_name,
-            create_json_vertical=split_json
+            create_json_vertical=split_json,
+            json_only=json_only
         )
-        print("\n=== Vertical Resources (Stable) ===")
-        print(f"Data Source: {result['dataSource']}")
-        print(f"Skillset   : {result['skillset']}")
-        print(f"Index      : {result['index']}")
-        print(f"Indexer    : {result['indexer']} (started)")
-        if container:
-            print(f"Container  : {container}")
+        if json_only:
+            print("\n=== JSON-Only Vertical Resources ===")
+            jr = result.get('json', {})
+            print(f"Data Source: {jr.get('dataSource')}")
+            print(f"Skillset   : {jr.get('skillset')}")
+            print(f"Index      : {jr.get('index')}")
+            print(f"Indexer    : {jr.get('indexer')} (started)")
+            if json_container or container:
+                print(f"Container  : {json_container or container}")
+        else:
+            print("\n=== Vertical Resources (Stable) ===")
+            print(f"Data Source: {result['dataSource']}")
+            print(f"Skillset   : {result['skillset']}")
+            print(f"Index      : {result['index']}")
+            print(f"Indexer    : {result['indexer']} (started)")
+            if container:
+                print(f"Container  : {container}")
         if result.get('json'):
             jr = result['json']
             print("\n--- JSON Vertical ---")
