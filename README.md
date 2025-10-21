@@ -103,6 +103,30 @@ python main.py delete_vertical --prefix demo
 
 Then add `idx-spo` as a knowledge source in Copilot Studio.
 
+### Quickly pick the right vertical for a new file pack
+
+When you receive a single pack of files for one use case (e.g., a set of docs, a code drop, or an API spec), you can auto-detect which existing vertical fits best (CODE, DOCUMENTS, STRUCTURED, SPREADSHEETS, MEDIA):
+
+```bash
+# Human-readable recommendation
+python vertical_recommender.py recommend ./my_files
+
+# JSON output (for automation)
+python vertical_recommender.py recommend ./my_files --json > recommendation.json
+```
+
+The output includes:
+- Recommended vertical type and confidence
+- File counts by category and top extensions
+- Suggested chunk size and overlap
+- A ready-to-use comma-separated list of extensions for indexer filtering
+
+Use the recommendation to choose your prefix (e.g., `cod`, `doc`, `str`) and run:
+
+```bash
+python main.py create_vertical --prefix <your-prefix>
+```
+
 ## Detailed Setup
 
 ### Azure AD App Registration
