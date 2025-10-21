@@ -26,11 +26,46 @@ The **Intelligent Vertical Creator** automates the process of analyzing source f
 ## Architecture
 
 ```
-Source Files → Analysis → Suggestions → Folder Structure → Blob Upload → Vertical Creation
-     ↓            ↓            ↓              ↓                 ↓              ↓
-  Mixed      File types   Optimized      Organized       Azure Blob    Search Indexes
-  Content    Categories   Chunking       by Type         Storage       with Vectors
+Quick Recommendation Path (Default)
+--------------------------------------------------------------
+Source Files → Quick Analyze → Recommend Vertical → Blob Upload → Create Vertical → Indexer
+     ↓              ↓                 ↓                ↓               ↓             ↓
+  Single       Count by type     CODE/DOCS/        Azure Blob     main.py create_  Vectors in
+  Pack         + confidence      STRUCTURED        container       vertical --prefix index
+
+Advanced (Optional): Pre-organize Files Before Upload
+--------------------------------------------------------------
+Source Files → Deep Analysis → Suggestions → Folder Structure → Blob Upload → Create Vertical → Indexer
+     ↓              ↓               ↓              ↓                ↓               ↓             ↓
+  Mixed        File types      Optimized       Organized by     Azure Blob      main.py create_  Vectors in
+  Content      & sizes         chunking        type/prefix       containers      vertical --prefix index
 ```
+
+## Quick Recommendation Path (Default)
+
+Use this when you have one pack of files for a single use case/index (e.g., documents, code drop, API spec). The tool recommends the best-fitting existing vertical (CODE, DOCUMENTS, STRUCTURED, SPREADSHEETS, MEDIA).
+
+```bash
+# Human-readable recommendation
+python vertical_recommender.py recommend ./my_files
+
+# JSON output (automation)
+python vertical_recommender.py recommend ./my_files --json > recommendation.json
+```
+
+The output includes:
+- Recommended vertical type and confidence
+- File counts by category and top extensions
+- Suggested chunk size and overlap
+- A ready-to-use comma-separated list of extensions for indexer filtering
+
+Next, create the vertical using your chosen prefix (for example: cod, doc, str):
+
+```bash
+python main.py create_vertical --prefix <your-prefix>
+```
+
+Upload your files to the appropriate blob container as usual (you can filter by the recommended extensions if desired), then monitor the indexer.
 
 ## Usage
 
