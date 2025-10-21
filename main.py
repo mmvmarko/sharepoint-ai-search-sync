@@ -111,16 +111,22 @@ def indexer_status(name):
 def prepare_code(zip_path: str, project_name: str, project_code: str, out_dir: str):
     """Unpack a project zip and emit normalized .txt files as a code corpus suitable for indexing."""
     try:
-        dest = prepare_code_from_zip(zip_path, project_name, project_code, out_dir)
-        # count produced .txt files
-        produced = 0
-        for root, _, files in os.walk(dest):
-            produced += sum(1 for f in files if f.lower().endswith('.txt'))
+        result = prepare_code_from_zip(zip_path, project_name, project_code, out_dir)
+        dest = result['project_folder']
+        scanned = result['scanned']
+        produced = result['collected']
+        skipped = result['skipped']
+        skipped_types = result['skipped_types']
         print("\n=== Code Corpus Prepared ===")
         print(f"Project    : {project_name} ({project_code})")
         print(f"Source Zip : {zip_path}")
         print(f"Output Dir : {dest}")
-        print(f"Files      : {produced} text files")
+        print(f"Scanned    : {scanned} files")
+        print(f"Collected  : {produced} text files")
+        print(f"Skipped    : {skipped} files")
+        if skipped > 0 and skipped_types:
+            kinds = ', '.join(f"{k}:{v}" for k, v in sorted(skipped_types.items()))
+            print(f"Skipped by type: {kinds}")
         print("\nArtifacts:")
         print(f"  - {os.path.join(dest, 'code_corpus_manifest.txt')}")
         print(f"  - {os.path.join(dest, 'file_map.txt')}")
