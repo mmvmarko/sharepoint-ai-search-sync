@@ -35,77 +35,59 @@ You must configure these in `.env` (see existing README for full template):
 - AZURE_OPENAI_ENDPOINT (custom subdomain), AZURE_OPENAI_API_KEY, AZURE_OPENAI_EMBEDDING_MODEL
 
 ---
-## 4. Command Glossary
+## 4. Command Glossary (current)
 
 Command | Purpose | Typical When
 --------|---------|-------------
-`python main.py config-info` | Show configuration readiness | Before first run / troubleshooting
-`python main.py sync` | Sync (initial + incremental) SharePoint → Blob | New or changed files in SharePoint
-`python main.py setup-search` | (Legacy) Creates classic pipeline with embeddings (non-integrated vectorizer) | Only if exploring old flow
-`python main.py setup-integrated-vectorization` | Create the standard integrated vectorization pipeline (default names) | One-off alternative to stable vertical
+`python main.py config_info` | Show configuration readiness | Before first run / troubleshooting
+`python main.py setup_integrated_vectorization` | Create the standard integrated vectorization pipeline (default names) | One-off alternative to stable vertical
 `python main.py create_vertical --prefix spo` | Create/update stable integrated vectorization vertical (ds/ss/idx/ix) | Initial setup for production/Copilot
-`python main.py check-integrated-status` | Check status of the integrated indexer (default names) | After setup-integrated-vectorization
 `python main.py test_integrated --prefix demo` | Create disposable test vertical (random suffix) | Experiment safely
 `python main.py delete_vertical --prefix spo` | Delete all vertical resources for prefix | Cleanup / rebuild
-`python main.py list-resources` | List search service objects (classic path) | Inspection
-`python main.py run-indexer` | Run legacy indexer (classic pipeline) | Only with setup-search path
-`python main.py indexer-status` | Status of legacy indexer | Legacy path only
-`python main.py full-setup` | Legacy end-to-end (classic index) | Not needed for integrated vertical
+`python main.py list_resources` | List search service objects | Inspection
+`python main.py run-indexer <indexerName>` | Run an indexer | Manual ingestion
+`python main.py indexer-status <indexerName>` | Show indexer status/history | Monitoring
+`python main.py full_setup` | End-to-end legacy flow (classic path) | Only if exploring old flow
+`python main.py prepare-code --zip <file.zip> --project-name <Name> --project-code <Code> --out <dir>` | Build a text corpus from a project zip | Code vertical prep
 
-> Recommended modern path: Use `create_vertical` (stable) or `setup-integrated-vectorization` (default names). Prefer the stable prefix approach (`spo`) for production.
+> Recommended modern path: Use `create_vertical` (stable) or `setup_integrated_vectorization` (default names). Prefer the stable prefix approach (`spo`) for production.
 
 ---
 ## 5. End-to-End Initial Setup (Recommended Modern Path)
 
-1. Verify config:
+1) Verify config:
    ```bash
-   python main.py config-info
+   python main.py config_info
    ```
-2. Sync SharePoint content to Blob:
-   ```bash
-   python main.py sync
-   ```
-3. Create stable integrated vertical:
+2) Create stable integrated vertical:
    ```bash
    python main.py create_vertical --prefix spo
    ```
-4. Monitor indexing:
+3) Monitor indexing:
    ```bash
-   python main.py check-integrated-status
+   python main.py indexer-status ix-spo
    ```
-5. Test semantic / vector query (REST example shown in main README).
-6. Add `idx-spo` as an Azure AI Search knowledge source in Copilot Studio.
+4) Test semantic / vector query (REST example shown in README).
+5) Add `idx-spo` as an Azure AI Search knowledge source in Copilot Studio.
+
+Tip: If you used `setup_integrated_vectorization` instead, the default indexer name is `ix-spofiles-integrated`.
 
 ---
-## 6. Propagating a File Change from SharePoint to the Index
+## 6. Re-ingesting Updated Content
 
-Scenario: A file in SharePoint was updated and you need the new content + embeddings reflected in the vector index.
+When blobs change (e.g., new files uploaded or existing files replaced), re-run the indexer for your vertical so embeddings get regenerated:
 
-Workflow:
-1. Run incremental sync (delta picks up change):
+- Safe re-run via vertical update (idempotent):
    ```bash
-   python main.py sync
+   python main.py create_vertical --prefix spo
    ```
-2. Re-run (or wait on scheduled) indexer. For the stable vertical created via `create_vertical`, the indexer was run once at creation. If you need to run it again manually:
-   - (Option A) Re-run vertical creation (safe idempotent update + run):
-     ```bash
-     python main.py create_vertical --prefix spo
-     ```
-     This updates definitions (PUT semantics) and starts the indexer again.
-   - (Option B) Issue direct REST call to run indexer `ix-spo`:
-     ```bash
-     # PowerShell example
-     Invoke-RestMethod -Method Post `
-       -Uri "https://<SEARCH_SERVICE>.search.windows.net/indexers/ix-spo/run?api-version=2024-07-01" `
-       -Headers @{"api-key"="<ADMIN_KEY>"}
-     ```
-3. Monitor status:
-   ```bash
-   python main.py check-integrated-status
-   ```
-4. (Optional) Validate updated content via a text+vector query.
+   This PUTs resources and starts the indexer again.
 
-Why you must re-run the indexer: Sync only updates blobs. The indexer must ingest those updated blobs and regenerate the embedding (skillset). If you skip re-running, the index will still have the old vector.
+- Or run the indexer directly:
+   ```bash
+   python main.py run-indexer ix-spo
+   python main.py indexer-status ix-spo
+   ```
 
 ---
 ## 7. Updating the Embedding Model or Dimensions
@@ -141,8 +123,7 @@ Action | Command
 -------|--------
 Delete stable vertical | `python main.py delete_vertical --prefix spo`
 Delete a test vertical | `python main.py delete_vertical --prefix demo` (or chosen prefix)
-Full reset (Search only) | Delete all verticals + recreate via steps in section 5
-Full reset (including delta) | Remove `delta_state.json` + rerun `python main.py sync`
+Full reset (Search only) | Delete vertical(s) + recreate via steps in section 5
 
 ---
 ## 10. Troubleshooting Quick Reference
@@ -153,18 +134,60 @@ No documents in index | Indexer not run / wrong prefix | Run create_vertical aga
 Vectors empty | Skillset missing / mapping issue (should be fixed now) | Recreate vertical; ensure OpenAI config
 403/401 on embeddings | Wrong OpenAI endpoint or key | Check custom subdomain & key
 Copilot rejects index | Non-integrated or Free tier service | Use integrated vertical on Basic+ tier
-File updated but old answer | Indexer not re-run post sync | Run `create_vertical --prefix spo` (or direct indexer run)
+File updated but old answer | Indexer not re-run after blob change | Run `create_vertical --prefix spo` (or direct indexer run)
 Imports unresolved warnings | Not packaged | (Optional) convert to package, or ignore—they are path-extended at runtime
 
 ---
-## 11. Best Practices
-- Keep stable production vertical prefix short (`spo`, `docs`, etc.)
+## 11. Code Corpus Preparation (for CODE verticals)
+
+If you have a zipped project and want to index its source as plain text, use `prepare-code`:
+
+```powershell
+python main.py prepare-code --zip "C:\path\to\project.zip" --project-name "MyProject" --project-code "ORG" --out code_corpus_myproject
+```
+
+What it does:
+- Extracts text/code files by extension and writes normalized `.txt` files
+- Supported highlights: .ts, .tsx, .js, .jsx, .mjs, .json, .md, .html, .css, .scss, .sass, .py, .java, .cs, .xml, .yml/.yaml, .gradle, .sh, .bat, .ps1, .sql
+- Produces a summary at the end: Scanned / Collected / Skipped + “Skipped by type” (e.g., `.map`)
+- Artifacts in the output folder:
+   - `code_corpus_manifest.txt`
+   - `file_map.txt`
+
+Notes:
+- Large source maps (e.g., `.mjs.map` / `.map`) are intentionally skipped to avoid noise and cost.
+- After preparing the corpus, upload the generated `.txt` files to your target blob container for the CODE vertical.
+
+---
+## 12. JSON-Only Vertical (for OpenAPI or structured JSON)
+
+You can create only the JSON vertical without the base one:
+
+```powershell
+python main.py create_vertical --prefix bo --json-only --json-container my-json-container
+```
+
+This creates resources with the `-json` suffix (e.g., `idx-bo-json`, `ix-bo-json`) and starts the indexer. If your prefix already ends with `-json` (e.g., `dev-bo-json`), names will become `*-json-json`—prefer a short base prefix (e.g., `bo`) when using `--json-only`.
+
+Delete JSON-only verticals using the actual resource suffix, e.g.:
+
+```powershell
+# If created with --prefix bo --json-only
+python main.py delete_vertical --prefix bo-json
+
+# If you used a prefix already ending in -json (not recommended)
+python main.py delete_vertical --prefix dev-bo-json-json
+```
+
+---
+## 13. Best Practices
+- Keep stable production vertical prefix short (`spo`, `docs`, `bo`, etc.)
 - Periodically re-run `sync` before running indexer to minimize stale content.
 - Avoid excessive disposable verticals to stay within service limits.
 - Consider adding a schedule to the indexer if frequent updates are needed (can be added to indexer definition later).
 
 ---
-## 12. Next Possible Enhancements (Not Yet Implemented)
+## 14. Next Possible Enhancements (Not Yet Implemented)
 Feature | Benefit
 --------|--------
 Scheduled indexer for vertical | Automates ingestion of new/changed blobs
@@ -176,13 +199,12 @@ Package restructuring | Cleaner imports + IDE support
 Request any of these and they can be added.
 
 ---
-## 13. Minimal Daily Ops Loop
+## 15. Minimal Daily Ops Loop
 ```
-python main.py sync
-python main.py create_vertical --prefix spo   # (or REST run indexer)
-python main.py check-integrated-status
+python main.py create_vertical --prefix spo   # updates & runs indexer
+python main.py indexer-status ix-spo
 # Optional: semantic query / Copilot validation
 ```
 
 ---
-**You now have a clean, repeatable workflow.** Use `sync` for content changes and `create_vertical` (or direct indexer run) to re-embed. Reach out for any enhancements.
+**You now have a clean, repeatable workflow.** Use `create_vertical` (or direct indexer run) after content changes to re-embed. Reach out for any enhancements.
