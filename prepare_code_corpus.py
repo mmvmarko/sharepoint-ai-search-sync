@@ -5,7 +5,7 @@ import hashlib
 from typing import List, Tuple
 
 TEXT_EXTS = {
-	'.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.html', '.css', '.scss', '.sass',
+	'.ts', '.tsx', '.js', '.jsx', '.mjs', '.json', '.md', '.html', '.css', '.scss', '.sass',
 	'.py', '.java', '.cs', '.xml', '.yml', '.yaml', '.gradle', '.sh', '.bat', '.ps1', '.sql'
 }
 
