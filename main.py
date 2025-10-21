@@ -22,6 +22,7 @@ from src.sharepoint_sync import SharePointSync, SharePointSyncError
 from src.azure_search_setup import AzureSearchSetup, SearchSetupError
 from src.azure_search_integrated_vectorization import AzureSearchIntegratedVectorization
 from config.settings import config
+from prepare_code_corpus import prepare_code_from_zip
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,32 @@ def indexer_status(name):
     except Exception as e:
         logger.error(f"Failed to check indexer status: {e}")
         print(f"❌ Failed to check indexer status: {e}")
+        sys.exit(1)
+
+@cli.command(name='prepare-code')
+@click.option('--zip', 'zip_path', required=True, help='Path to a zip file containing the project code')
+@click.option('--project-name', required=True, help='Human-readable project name (used in folder name)')
+@click.option('--project-code', required=True, help='Short code or org tag for the project')
+@click.option('--out', 'out_dir', required=True, help='Output directory where the corpus will be written')
+def prepare_code(zip_path: str, project_name: str, project_code: str, out_dir: str):
+    """Unpack a project zip and emit normalized .txt files as a code corpus suitable for indexing."""
+    try:
+        dest = prepare_code_from_zip(zip_path, project_name, project_code, out_dir)
+        # count produced .txt files
+        produced = 0
+        for root, _, files in os.walk(dest):
+            produced += sum(1 for f in files if f.lower().endswith('.txt'))
+        print("\n=== Code Corpus Prepared ===")
+        print(f"Project    : {project_name} ({project_code})")
+        print(f"Source Zip : {zip_path}")
+        print(f"Output Dir : {dest}")
+        print(f"Files      : {produced} text files")
+        print("\nArtifacts:")
+        print(f"  - {os.path.join(dest, 'code_corpus_manifest.txt')}")
+        print(f"  - {os.path.join(dest, 'file_map.txt')}")
+    except Exception as e:
+        logger.error(f"Failed to prepare code corpus: {e}")
+        print(f"❌ Failed to prepare code corpus: {e}")
         sys.exit(1)
 
 @cli.command()
