@@ -3,6 +3,8 @@
 A Python application that syncs SharePoint Online documents to Azure Blob Storage and configures Azure AI Search for powerful document search and retrieval, specifically designed to work with Microsoft Copilot Studio.
 
 > For a full operational walkthrough (workflows, command glossary, troubleshooting), see **[guide.md](./guide.md)**.
+> 
+> **NEW**: For automated vertical creation with intelligent file analysis, see **[INTELLIGENT_VERTICALS.md](./INTELLIGENT_VERTICALS.md)**.
 
 ## Features
 
@@ -11,6 +13,7 @@ A Python application that syncs SharePoint Online documents to Azure Blob Storag
 - **Azure Blob Storage**: Stores documents with rich metadata including original SharePoint URLs
 - **Azure AI Search with Vector Embeddings**: Full-text search with semantic vector search for enhanced relevance
 - **Integrated Vectorization Mode**: Optional simplified pipeline using Azure AI Search vectorizers + embedding skill for Copilot Studio compatibility
+- **🆕 Intelligent Vertical Creator**: Automatically analyzes source files and suggests optimal vertical configurations (chunking, splitting, grouping)
 - **Copilot Studio Ready**: Preserves SharePoint URLs for proper citation links
 - **User Authentication**: Uses delegated authentication (device code flow) for secure access
 - **Robust Error Handling**: Comprehensive logging and error recovery
@@ -99,6 +102,30 @@ python main.py delete_vertical --prefix demo
 ```
 
 Then add `idx-spo` as a knowledge source in Copilot Studio.
+
+### Quickly pick the right vertical for a new file pack
+
+When you receive a single pack of files for one use case (e.g., a set of docs, a code drop, or an API spec), you can auto-detect which existing vertical fits best (CODE, DOCUMENTS, STRUCTURED, SPREADSHEETS, MEDIA):
+
+```bash
+# Human-readable recommendation
+python vertical_recommender.py recommend ./my_files
+
+# JSON output (for automation)
+python vertical_recommender.py recommend ./my_files --json > recommendation.json
+```
+
+The output includes:
+- Recommended vertical type and confidence
+- File counts by category and top extensions
+- Suggested chunk size and overlap
+- A ready-to-use comma-separated list of extensions for indexer filtering
+
+Use the recommendation to choose your prefix (e.g., `cod`, `doc`, `str`) and run:
+
+```bash
+python main.py create_vertical --prefix <your-prefix>
+```
 
 ## Detailed Setup
 

@@ -529,7 +529,8 @@ class AzureSearchIntegratedVectorization:
                         skillset_name: Optional[str] = None,
                         index_name: Optional[str] = None,
                         indexer_name: Optional[str] = None,
-                        create_json_vertical: bool = False) -> Dict[str, Any]:
+                        create_json_vertical: bool = False,
+                        json_only: bool = False) -> Dict[str, Any]:
         """Create or update a vertical (data source, skillset, index, indexer).
 
         You may specify explicit names; otherwise names are derived from prefix:
@@ -543,6 +544,35 @@ class AzureSearchIntegratedVectorization:
         safe = ''.join(c for c in prefix.lower() if c.isalnum() or c == '-')[:48]
         if not safe:
             raise SearchSetupError("Prefix resulted in empty safe name")
+
+        # When creating only the JSON vertical, skip base resources entirely
+        if json_only:
+            json_suffix = f"{safe}-json"
+            json_ds = f"ds-{json_suffix}"
+            json_ss = f"ss-{json_suffix}"
+            json_idx = f"idx-{json_suffix}"
+            json_ix = f"ix-{json_suffix}"
+            logger.info(
+                f"Creating ONLY JSON vertical resources: ds={json_ds} idx={json_idx} container={json_container or container or self.config.az_container}"
+            )
+            # Allow different container for JSON vertical
+            self.create_data_source(json_ds, container=json_container or container)
+            self.create_index_with_integrated_vectorization(json_idx)
+            self.create_json_skillset(json_ss)
+            # Allow both raw JSON specs and preprocessed chunk .txt files
+            self.create_indexer_with_integrated_vectorization(
+                json_ix,
+                json_ds,
+                json_idx,
+                json_ss,
+                indexed_extensions=".json,.txt",
+                excluded_extensions=".xml"
+            )
+            self.run_indexer(json_ix)
+            return {
+                "status": "started",
+                "json": {"dataSource": json_ds, "index": json_idx, "skillset": json_ss, "indexer": json_ix}
+            }
 
         ds_name = data_source_name or f"ds-{safe}"
         ss_name = skillset_name or f"ss-{safe}"

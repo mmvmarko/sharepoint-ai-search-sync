@@ -22,6 +22,7 @@ from src.sharepoint_sync import SharePointSync, SharePointSyncError
 from src.azure_search_setup import AzureSearchSetup, SearchSetupError
 from src.azure_search_integrated_vectorization import AzureSearchIntegratedVectorization
 from config.settings import config
+from prepare_code_corpus import prepare_code_from_zip
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,38 @@ def indexer_status(name):
     except Exception as e:
         logger.error(f"Failed to check indexer status: {e}")
         print(f"❌ Failed to check indexer status: {e}")
+        sys.exit(1)
+
+@cli.command(name='prepare-code')
+@click.option('--zip', 'zip_path', required=True, help='Path to a zip file containing the project code')
+@click.option('--project-name', required=True, help='Human-readable project name (used in folder name)')
+@click.option('--project-code', required=True, help='Short code or org tag for the project')
+@click.option('--out', 'out_dir', required=True, help='Output directory where the corpus will be written')
+def prepare_code(zip_path: str, project_name: str, project_code: str, out_dir: str):
+    """Unpack a project zip and emit normalized .txt files as a code corpus suitable for indexing."""
+    try:
+        result = prepare_code_from_zip(zip_path, project_name, project_code, out_dir)
+        dest = result['project_folder']
+        scanned = result['scanned']
+        produced = result['collected']
+        skipped = result['skipped']
+        skipped_types = result['skipped_types']
+        print("\n=== Code Corpus Prepared ===")
+        print(f"Project    : {project_name} ({project_code})")
+        print(f"Source Zip : {zip_path}")
+        print(f"Output Dir : {dest}")
+        print(f"Scanned    : {scanned} files")
+        print(f"Collected  : {produced} text files")
+        print(f"Skipped    : {skipped} files")
+        if skipped > 0 and skipped_types:
+            kinds = ', '.join(f"{k}:{v}" for k, v in sorted(skipped_types.items()))
+            print(f"Skipped by type: {kinds}")
+        print("\nArtifacts:")
+        print(f"  - {os.path.join(dest, 'code_corpus_manifest.txt')}")
+        print(f"  - {os.path.join(dest, 'file_map.txt')}")
+    except Exception as e:
+        logger.error(f"Failed to prepare code corpus: {e}")
+        print(f"❌ Failed to prepare code corpus: {e}")
         sys.exit(1)
 
 @cli.command()
@@ -287,7 +320,8 @@ def test_integrated(prefix):
 @click.option('--idx-name', default=None, help='Explicit index name (optional)')
 @click.option('--ix-name', default=None, help='Explicit indexer name (optional)')
 @click.option('--split-json', is_flag=True, default=False, help='Create separate -json vertical for .json files')
-def create_vertical(prefix, container, json_container, ds_name, ss_name, idx_name, ix_name, split_json):
+@click.option('--json-only', is_flag=True, default=False, help='Create only the -json vertical (no base vertical)')
+def create_vertical(prefix, container, json_container, ds_name, ss_name, idx_name, ix_name, split_json, json_only):
     """Create or update an integrated vectorization vertical with customizable names.
 
     If explicit names are not provided they are derived from prefix:
@@ -295,6 +329,8 @@ def create_vertical(prefix, container, json_container, ds_name, ss_name, idx_nam
     """
     logger.info(f"Creating vertical with prefix='{prefix}' container='{container}' explicit names ds={ds_name} ss={ss_name} idx={idx_name} ix={ix_name}")
     try:
+        if split_json and json_only:
+            raise SearchSetupError("--split-json and --json-only are mutually exclusive. Use one or the other.")
         search_setup = AzureSearchIntegratedVectorization()
         result = search_setup.create_vertical(
             prefix,
@@ -304,15 +340,26 @@ def create_vertical(prefix, container, json_container, ds_name, ss_name, idx_nam
             skillset_name=ss_name,
             index_name=idx_name,
             indexer_name=ix_name,
-            create_json_vertical=split_json
+            create_json_vertical=split_json,
+            json_only=json_only
         )
-        print("\n=== Vertical Resources (Stable) ===")
-        print(f"Data Source: {result['dataSource']}")
-        print(f"Skillset   : {result['skillset']}")
-        print(f"Index      : {result['index']}")
-        print(f"Indexer    : {result['indexer']} (started)")
-        if container:
-            print(f"Container  : {container}")
+        if json_only:
+            print("\n=== JSON-Only Vertical Resources ===")
+            jr = result.get('json', {})
+            print(f"Data Source: {jr.get('dataSource')}")
+            print(f"Skillset   : {jr.get('skillset')}")
+            print(f"Index      : {jr.get('index')}")
+            print(f"Indexer    : {jr.get('indexer')} (started)")
+            if json_container or container:
+                print(f"Container  : {json_container or container}")
+        else:
+            print("\n=== Vertical Resources (Stable) ===")
+            print(f"Data Source: {result['dataSource']}")
+            print(f"Skillset   : {result['skillset']}")
+            print(f"Index      : {result['index']}")
+            print(f"Indexer    : {result['indexer']} (started)")
+            if container:
+                print(f"Container  : {container}")
         if result.get('json'):
             jr = result['json']
             print("\n--- JSON Vertical ---")
