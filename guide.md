@@ -140,6 +140,8 @@ Imports unresolved warnings | Not packaged | (Optional) convert to package, or i
 ---
 ## 11. Code Corpus Preparation (for CODE verticals)
 
+### Single Project Code Corpus
+
 If you have a zipped project and want to index its source as plain text, use `prepare-code`:
 
 ```powershell
@@ -149,7 +151,7 @@ python main.py prepare-code --zip "C:\path\to\project.zip" --project-name "MyPro
 What it does:
 - Extracts text/code files by extension and writes normalized `.txt` files
 - Supported highlights: .ts, .tsx, .js, .jsx, .mjs, .json, .md, .html, .css, .scss, .sass, .py, .java, .cs, .xml, .yml/.yaml, .gradle, .sh, .bat, .ps1, .sql
-- Produces a summary at the end: Scanned / Collected / Skipped + “Skipped by type” (e.g., `.map`)
+- Produces a summary at the end: Scanned / Collected / Skipped + "Skipped by type" (e.g., `.map`)
 - Artifacts in the output folder:
    - `code_corpus_manifest.txt`
    - `file_map.txt`
@@ -157,6 +159,29 @@ What it does:
 Notes:
 - Large source maps (e.g., `.mjs.map` / `.map`) are intentionally skipped to avoid noise and cost.
 - After preparing the corpus, upload the generated `.txt` files to your target blob container for the CODE vertical.
+
+### Multi-Module Code Corpus (BO Code)
+
+If you have a zip with **multiple API modules** (like BO_Code.zip with 16 modules, each containing swagger.json + code):
+
+```powershell
+python main.py prepare-bo-code --zip BO_Code.zip --out bo_prepared
+```
+
+What it does:
+- Processes 16 separate API modules from a single zip
+- Creates **two outputs**:
+  - `bo_prepared/swagger/` - 16 enriched OpenAPI JSON files (with x-module metadata)
+  - `bo_prepared/code/` - 2,426+ normalized code files with contextual headers
+- Each swagger.json is enriched with module name, folder, and source file metadata
+- Each code file gets a header with source path, module, and folder context
+- Produces detailed `SUMMARY.txt` with per-module statistics
+
+**See [BO_CODE_SETUP_GUIDE.md](BO_CODE_SETUP_GUIDE.md) for complete step-by-step workflow** including:
+- Uploading to separate blob containers
+- Creating two verticals (OpenAPI + Code)
+- Connecting to Copilot Studio
+- Updating and maintaining the indexes
 
 ---
 ## 12. JSON-Only Vertical (for OpenAPI or structured JSON)

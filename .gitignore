@@ -48,6 +48,8 @@ delta_state.json
 sync.log
 /code_corpus
 /code_corpus_v2
+/openapi_chunks
+/bo_prepared
 
 # OS specific
 .DS_Store

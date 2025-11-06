@@ -329,9 +329,14 @@ class AzureSearchIntegratedVectorization:
                                                      index_name: str = "idx-spofiles-integrated",
                                                      skillset_name: str = "ss-spofiles-integrated",
                                                      indexed_extensions: str = ".pdf,.docx,.pptx,.txt,.xlsx,.html,.md",
-                                                     excluded_extensions: str = ".xml") -> Dict[str, Any]:
-        """Create indexer wired to skillset producing embeddings -> vector field."""
-        logger.info(f"Creating indexer with integrated vectorization: {name}")
+                                                     excluded_extensions: str = ".xml",
+                                                     parsing_mode: str = "default") -> Dict[str, Any]:
+        """Create indexer wired to skillset producing embeddings -> vector field.
+        
+        Parameters:
+            parsing_mode: Parsing mode for blob indexer. Options: "default", "json", "jsonArray", "delimitedText"
+        """
+        logger.info(f"Creating indexer with integrated vectorization: {name} (parsing_mode={parsing_mode})")
 
         indexer_definition = {
             "name": name,
@@ -341,7 +346,7 @@ class AzureSearchIntegratedVectorization:
             "parameters": {
                 "configuration": {
                     "dataToExtract": "contentAndMetadata",
-                    "parsingMode": "default",
+                    "parsingMode": parsing_mode,
                     "indexedFileNameExtensions": indexed_extensions,
                     "excludedFileNameExtensions": excluded_extensions,
                     "failOnUnsupportedContentType": False,
@@ -560,13 +565,15 @@ class AzureSearchIntegratedVectorization:
             self.create_index_with_integrated_vectorization(json_idx)
             self.create_json_skillset(json_ss)
             # Allow both raw JSON specs and preprocessed chunk .txt files
+            # Use "json" parsing mode for JSON files
             self.create_indexer_with_integrated_vectorization(
                 json_ix,
                 json_ds,
                 json_idx,
                 json_ss,
                 indexed_extensions=".json,.txt",
-                excluded_extensions=".xml"
+                excluded_extensions=".xml",
+                parsing_mode="json"
             )
             self.run_indexer(json_ix)
             return {
@@ -603,13 +610,15 @@ class AzureSearchIntegratedVectorization:
             self.create_index_with_integrated_vectorization(json_idx)
             self.create_json_skillset(json_ss)
             # Allow both raw JSON specs and preprocessed chunk .txt files
+            # Use "json" parsing mode for JSON files
             self.create_indexer_with_integrated_vectorization(
                 json_ix,
                 json_ds,
                 json_idx,
                 json_ss,
                 indexed_extensions=".json,.txt",
-                excluded_extensions=".xml"
+                excluded_extensions=".xml",
+                parsing_mode="json"
             )
             self.run_indexer(json_ix)
             json_resources = {"dataSource": json_ds, "index": json_idx, "skillset": json_ss, "indexer": json_ix}

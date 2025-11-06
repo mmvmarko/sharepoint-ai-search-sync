@@ -23,6 +23,7 @@ from src.azure_search_setup import AzureSearchSetup, SearchSetupError
 from src.azure_search_integrated_vectorization import AzureSearchIntegratedVectorization
 from config.settings import config
 from prepare_code_corpus import prepare_code_from_zip
+from prepare_bo_code import prepare_bo_code_from_zip
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,67 @@ def prepare_code(zip_path: str, project_name: str, project_code: str, out_dir: s
         logger.error(f"Failed to prepare code corpus: {e}")
         print(f"❌ Failed to prepare code corpus: {e}")
         sys.exit(1)
+
+
+@cli.command(name='prepare-bo-code')
+@click.option('--zip', 'zip_path', required=True, help='Path to BO_Code.zip containing multiple API modules')
+@click.option('--out', 'out_dir', required=True, help='Output directory for prepared files')
+def prepare_bo_code(zip_path: str, out_dir: str):
+    """
+    Prepare BO Code zip for Azure AI Search ingestion.
+    
+    Processes a zip containing multiple API modules (each with swagger.json + code corpus).
+    Creates two outputs:
+      - swagger/  -> Enriched OpenAPI/Swagger JSON files
+      - code/     -> Normalized code corpus text files
+    """
+    try:
+        print(f"📦 Processing BO Code zip: {zip_path}")
+        print(f"📁 Output directory: {out_dir}\n")
+        
+        stats = prepare_bo_code_from_zip(zip_path, out_dir)
+        
+        print("\n" + "=" * 70)
+        print("✅ BO CODE PREPARATION COMPLETE")
+        print("=" * 70)
+        print(f"\n📊 STATISTICS")
+        print(f"  Modules found     : {stats['modules_found']}")
+        print(f"  Swagger files     : {stats['swagger_files']}")
+        print(f"  Code files scanned: {stats['code_files_scanned']}")
+        print(f"  Code files written: {stats['code_files_written']}")
+        print(f"  Code files skipped: {stats['code_files_skipped']}")
+        
+        if stats['skipped_by_type']:
+            print(f"\n  Skipped by type:")
+            for ext, count in sorted(stats['skipped_by_type'].items(), key=lambda x: -x[1])[:10]:
+                print(f"    {ext:<15} : {count} files")
+        
+        print(f"\n📂 OUTPUT STRUCTURE")
+        print(f"  {os.path.join(out_dir, 'swagger')}  -> {stats['swagger_files']} JSON files")
+        print(f"  {os.path.join(out_dir, 'code')}     -> {stats['code_files_written']} text files")
+        print(f"  {os.path.join(out_dir, 'SUMMARY.txt')}  -> Full report")
+        
+        print(f"\n📋 MODULES ({stats['modules_found']})")
+        for mod in stats['modules'][:10]:  # Show first 10
+            swagger_check = '✓' if mod['swagger'] else '✗'
+            print(f"  {mod['name']:<20} Swagger: {swagger_check}  Code: {mod['code_files']} files")
+        
+        if len(stats['modules']) > 10:
+            print(f"  ... and {len(stats['modules']) - 10} more modules")
+        
+        print(f"\n🎯 NEXT STEPS")
+        print(f"  1. Review SUMMARY.txt in output directory")
+        print(f"  2. Upload swagger/ folder to blob container for OpenAPI vertical")
+        print(f"  3. Upload code/ folder to blob container for code vertical")
+        print(f"  4. Create integrated vectorization indexes with:")
+        print(f"     python main.py create_vertical --prefix bo-swagger --json-only --json-container <container>")
+        print(f"     python main.py create_vertical --prefix bo-code")
+        
+    except Exception as e:
+        logger.error(f"Failed to prepare BO code: {e}", exc_info=True)
+        print(f"❌ Failed to prepare BO code: {e}")
+        sys.exit(1)
+
 
 @cli.command()
 def list_resources():
